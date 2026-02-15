@@ -9,9 +9,9 @@ import org.nullpointer.ratelimiter.model.state.TokenBucketState;
 import java.util.concurrent.TimeUnit;
 
 public class TokenBucketConfig implements RateLimitConfig {
-    private final long capacity;
-    private final long refillTokens;
-    private final long refillIntervalMillis;
+    private final double capacity;
+    private final double refillTokens;
+    private final double refillIntervalMillis;
 
     public TokenBucketConfig(long capacity, long refillTokens, long refillInterval, TimeUnit timeUnit) {
         this.capacity = capacity;
@@ -19,15 +19,15 @@ public class TokenBucketConfig implements RateLimitConfig {
         this.refillIntervalMillis = timeUnit.toMillis(refillInterval);
     }
 
-    public long getCapacity() {
+    public double getCapacity() {
         return capacity;
     }
 
-    public long getRefillTokens() {
+    public double getRefillTokens() {
         return refillTokens;
     }
 
-    public long getRefillIntervalMillis() {
+    public double getRefillIntervalMillis() {
         return refillIntervalMillis;
     }
 

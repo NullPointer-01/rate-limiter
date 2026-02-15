@@ -27,53 +27,63 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
         refill(bucketConfig, bucketState, now);
 
         RateLimitResult.Builder builder = RateLimitResult.builder();
-        long availableTokens = bucketState.getAvailableTokens();
+        double availableTokens = bucketState.getAvailableTokens();
 
         if (availableTokens >= tokens) {
-            long remainingTokens = availableTokens - tokens;
+            double remainingTokens = availableTokens - tokens;
 
             bucketState.setAvailableTokens(remainingTokens);
             builder.allowed(true)
-                    .limit(bucketConfig.getCapacity())
-                    .remaining(remainingTokens)
+                    .limit((long) Math.floor(bucketConfig.getCapacity()))
+                    .remaining((long) Math.floor(remainingTokens))
                     .resetAtMillis(calculateResetTime(bucketConfig, bucketState, now));
             return builder.build();
         }
 
-        long tokensNeeded = tokens - availableTokens;
-        long retryAfterMillis = (long) Math.ceil((double) tokensNeeded * bucketConfig.getRefillIntervalMillis() / bucketConfig.getRefillTokens());
+        double tokensNeeded = tokens - availableTokens;
+        long retryAfterMillis = (long) Math.ceil(tokensNeeded * bucketConfig.getRefillIntervalMillis() / bucketConfig.getRefillTokens());
 
         builder.allowed(false)
-                .limit(bucketConfig.getCapacity())
-                .remaining(availableTokens)
+                .limit((long) Math.floor(bucketConfig.getCapacity()))
+                .remaining((long) Math.floor(availableTokens))
                 .retryAfterMillis(retryAfterMillis)
                 .resetAtMillis(now + retryAfterMillis);
         return builder.build();
     }
 
     private void refill(TokenBucketConfig config, TokenBucketState state, long now) {
-        long capacity = config.getCapacity();
-        long refillTokens = config.getRefillTokens();
-        long refillIntervalMillis = config.getRefillIntervalMillis();
+        double capacity = config.getCapacity();
+        double refillTokens = config.getRefillTokens();
+        double refillIntervalMillis = config.getRefillIntervalMillis();
 
-        long availableTokens = state.getAvailableTokens();
+        if (refillTokens <= 0 || refillIntervalMillis <= 0) {
+            return;
+        }
+
+        double availableTokens = state.getAvailableTokens();
         long lastRefillTimestamp = state.getLastRefillTimestamp();
 
         long elapsed = now - lastRefillTimestamp;
         if (elapsed > 0) {
-            long tokensToAdd = (refillTokens * elapsed) / refillIntervalMillis;
-            availableTokens = Math.min(capacity, availableTokens + tokensToAdd);
+            double tokensToAdd = (refillTokens * elapsed) / refillIntervalMillis;
+            if (tokensToAdd > 0) {
+                availableTokens = Math.min(capacity, availableTokens + tokensToAdd);
 
-            state.setAvailableTokens(availableTokens);
-            state.setLastRefillTimestamp(now);
+                // Advance time only for the portion that produced tokens
+                double elapsedUsed = (tokensToAdd * refillIntervalMillis) / refillTokens;
+                lastRefillTimestamp = Math.min(now, (long) (lastRefillTimestamp + elapsedUsed));
+
+                state.setLastRefillTimestamp(lastRefillTimestamp);
+                state.setAvailableTokens(availableTokens);
+            }
         }
     }
 
     private long calculateResetTime(TokenBucketConfig config, TokenBucketState state, long now) {
-        long tokensToFill = config.getCapacity() - state.getAvailableTokens();
+        double tokensToFill = config.getCapacity() - state.getAvailableTokens();
         if (tokensToFill <= 0) return now;
 
-        long retryAfterMillis = (long) Math.ceil((double) tokensToFill * config.getRefillIntervalMillis() / config.getRefillTokens());
+        long retryAfterMillis = (long) Math.ceil(tokensToFill * config.getRefillIntervalMillis() / config.getRefillTokens());
         return now + retryAfterMillis;
     }
 }
