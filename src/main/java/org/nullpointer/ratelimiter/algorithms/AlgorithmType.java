@@ -18,6 +18,12 @@ public enum AlgorithmType {
         public RateLimitingAlgorithm getAlgorithm() {
             return new FixedWindowCounterAlgorithm();
         }
+    },
+    SLIDING_WINDOW_COUNTER() {
+        @Override
+        public RateLimitingAlgorithm getAlgorithm() {
+            return new FixedWindowCounterAlgorithm();
+        }
     };
 
     public abstract RateLimitingAlgorithm getAlgorithm();
