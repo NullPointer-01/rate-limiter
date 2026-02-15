@@ -4,6 +4,7 @@ import org.nullpointer.ratelimiter.client.RateLimiter;
 import org.nullpointer.ratelimiter.core.ConfigurationManager;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
+import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.storage.InMemoryStore;
@@ -16,6 +17,37 @@ public class Main {
         demoDefaultConfig();
         demoTokenBucketRateLimiter();
         demoSlidingWindowRateLimiter();
+        demoFixedWindowCounterRateLimiter();
+    }
+
+    private static void demoFixedWindowCounterRateLimiter() {
+        Store store = new InMemoryStore();
+        ConfigurationManager configManager = new ConfigurationManager(store);
+
+        FixedWindowCounterConfig config = new FixedWindowCounterConfig(10, 10, TimeUnit.SECONDS);
+        RateLimiter rateLimiter = new RateLimiter(configManager);
+
+        RateLimitKey key = RateLimitKey.builder().setUserId("user123").build();
+        configManager.setConfig(key, config);
+
+        RateLimitResult result = rateLimiter.process(key, 4);
+        System.out.println(result);
+
+        result = rateLimiter.process(key, 5);
+        System.out.println(result);
+
+        result = rateLimiter.process(key, 10);
+        System.out.println(result);
+
+        if (!result.isAllowed()) {
+            try {
+                Thread.sleep(result.getRetryAfterMillis());
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            result = rateLimiter.process(key, 10);
+            System.out.println(result);
+        }
     }
 
     private static void demoSlidingWindowRateLimiter() {
