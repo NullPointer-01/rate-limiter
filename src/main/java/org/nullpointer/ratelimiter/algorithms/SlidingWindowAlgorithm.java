@@ -44,7 +44,7 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
 
         builder.allowed(false)
                 .limit(maxCost)
-                .remaining(maxCost - currentWindowCost)
+                .remaining(Math.max(0L, maxCost - currentWindowCost))
                 .retryAfterMillis(resetTime - now)
                 .resetAtMillis(resetTime);
         return builder.build();

@@ -44,7 +44,7 @@ public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
         builder.allowed(false)
                 .limit(capacity)
-                .remaining(capacity - currentWindowUsed)
+                .remaining(Math.max(0L, capacity - currentWindowUsed))
                 .retryAfterMillis(resetTime - now)
                 .resetAtMillis(resetTime);
         return builder.build();
