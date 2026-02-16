@@ -22,7 +22,7 @@ public enum AlgorithmType {
     SLIDING_WINDOW_COUNTER() {
         @Override
         public RateLimitingAlgorithm getAlgorithm() {
-            return new FixedWindowCounterAlgorithm();
+            return new SlidingWindowCounterAlgorithm();
         }
     };
 

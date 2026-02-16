@@ -6,7 +6,6 @@ import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 
 public interface RateLimitingAlgorithm {
-    AlgorithmType getAlgorithmType();
 
     RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state);
 

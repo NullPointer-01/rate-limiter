@@ -8,10 +8,6 @@ import org.nullpointer.ratelimiter.model.state.FixedWindowCounterState;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 
 public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
-    @Override
-    public AlgorithmType getAlgorithmType() {
-        return AlgorithmType.FIXED_WINDOW_COUNTER;
-    }
 
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {

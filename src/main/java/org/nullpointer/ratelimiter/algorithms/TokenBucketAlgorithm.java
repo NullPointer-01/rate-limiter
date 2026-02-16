@@ -8,10 +8,6 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.TokenBucketState;
 
 public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
-    @Override
-    public AlgorithmType getAlgorithmType() {
-        return AlgorithmType.TOKEN_BUCKET;
-    }
 
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {

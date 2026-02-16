@@ -8,10 +8,6 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.SlidingWindowState;
 
 public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
-    @Override
-    public AlgorithmType getAlgorithmType() {
-        return AlgorithmType.SLIDING_WINDOW;
-    }
 
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {

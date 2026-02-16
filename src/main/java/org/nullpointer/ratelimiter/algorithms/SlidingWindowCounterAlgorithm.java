@@ -2,18 +2,12 @@ package org.nullpointer.ratelimiter.algorithms;
 
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
-import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowCounterConfig;
-import org.nullpointer.ratelimiter.model.state.FixedWindowCounterState;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.SlidingWindowCounterState;
 
 public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
-    @Override
-    public AlgorithmType getAlgorithmType() {
-        return AlgorithmType.SLIDING_WINDOW_COUNTER;
-    }
 
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
