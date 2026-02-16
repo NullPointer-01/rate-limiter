@@ -2,11 +2,11 @@ package org.nullpointer.ratelimiter.model.state;
 
 public class TokenBucketState implements RateLimitState {
     private double availableTokens;
-    private long lastRefillTimestamp;
+    private long lastRefillNanos;
 
-    public TokenBucketState(double availableTokens, long lastRefillTimestamp) {
+    public TokenBucketState(double availableTokens, long lastRefillNanos) {
         this.availableTokens = availableTokens;
-        this.lastRefillTimestamp = lastRefillTimestamp;
+        this.lastRefillNanos = lastRefillNanos;
     }
 
     public double getAvailableTokens() {
@@ -17,11 +17,11 @@ public class TokenBucketState implements RateLimitState {
         this.availableTokens = availableTokens;
     }
 
-    public long getLastRefillTimestamp() {
-        return lastRefillTimestamp;
+    public long getLastRefillNanos() {
+        return lastRefillNanos;
     }
 
-    public void setLastRefillTimestamp(long lastRefillTimestamp) {
-        this.lastRefillTimestamp = lastRefillTimestamp;
+    public void setLastRefillNanos(long lastRefillNanos) {
+        this.lastRefillNanos = lastRefillNanos;
     }
 }

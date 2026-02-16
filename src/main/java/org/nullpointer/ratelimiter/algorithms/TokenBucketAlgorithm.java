@@ -22,9 +22,10 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
         TokenBucketConfig bucketConfig = (TokenBucketConfig) config;
         TokenBucketState bucketState = (TokenBucketState) state;
-        long now = System.currentTimeMillis();
+        long nowNanos = System.nanoTime();
+        long nowMillis = System.currentTimeMillis();
 
-        refill(bucketConfig, bucketState, now);
+        refill(bucketConfig, bucketState, nowNanos);
 
         RateLimitResult.Builder builder = RateLimitResult.builder();
         double availableTokens = bucketState.getAvailableTokens();
@@ -36,7 +37,8 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
             builder.allowed(true)
                     .limit((long) Math.floor(bucketConfig.getCapacity()))
                     .remaining((long) Math.floor(remainingTokens))
-                    .resetAtMillis(calculateResetTime(bucketConfig, bucketState, now));
+                    .resetAtMillis(calculateResetTime(bucketConfig, bucketState, nowMillis))
+                    .retryAfterMillis(0);
             return builder.build();
         }
 
@@ -47,33 +49,33 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
                 .limit((long) Math.floor(bucketConfig.getCapacity()))
                 .remaining((long) Math.floor(availableTokens))
                 .retryAfterMillis(retryAfterMillis)
-                .resetAtMillis(now + retryAfterMillis);
+                .resetAtMillis(nowMillis + retryAfterMillis);
         return builder.build();
     }
 
-    private void refill(TokenBucketConfig config, TokenBucketState state, long now) {
+        private void refill(TokenBucketConfig config, TokenBucketState state, long nowNanos) {
         double capacity = config.getCapacity();
         double refillTokens = config.getRefillTokens();
-        double refillIntervalMillis = config.getRefillIntervalMillis();
+        double refillIntervalNanos = config.getRefillIntervalMillis() * 1_000_000;
 
-        if (refillTokens <= 0 || refillIntervalMillis <= 0) {
+        if (refillTokens <= 0 || refillIntervalNanos <= 0) {
             return;
         }
 
         double availableTokens = state.getAvailableTokens();
-        long lastRefillTimestamp = state.getLastRefillTimestamp();
+        long lastRefillNanos = state.getLastRefillNanos();
 
-        long elapsed = now - lastRefillTimestamp;
-        if (elapsed > 0) {
-            double tokensToAdd = (refillTokens * elapsed) / refillIntervalMillis;
+        long elapsedNanos = nowNanos - lastRefillNanos;
+        if (elapsedNanos > 0) {
+            double tokensToAdd = (refillTokens * elapsedNanos) / refillIntervalNanos;
             if (tokensToAdd > 0) {
                 availableTokens = Math.min(capacity, availableTokens + tokensToAdd);
 
                 // Advance time only for the portion that produced tokens
-                double elapsedUsed = (tokensToAdd * refillIntervalMillis) / refillTokens;
-                lastRefillTimestamp = Math.min(now, (long) (lastRefillTimestamp + elapsedUsed));
+                double elapsedUsedNanos = (tokensToAdd * refillIntervalNanos) / refillTokens;
+                lastRefillNanos = Math.min(nowNanos, (long) (lastRefillNanos + elapsedUsedNanos));
 
-                state.setLastRefillTimestamp(lastRefillTimestamp);
+                state.setLastRefillNanos(lastRefillNanos);
                 state.setAvailableTokens(availableTokens);
             }
         }

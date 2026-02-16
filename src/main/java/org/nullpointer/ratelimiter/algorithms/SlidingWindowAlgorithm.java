@@ -24,29 +24,32 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
 
         SlidingWindowConfig windowConfig = (SlidingWindowConfig) config;
         SlidingWindowState windowState = (SlidingWindowState) state;
-        long now = System.currentTimeMillis();
+        long nowNanos = System.nanoTime();
+        long nowMillis = System.currentTimeMillis();
 
         RateLimitResult.Builder builder = RateLimitResult.builder();
-        long currentWindowCost = windowState.getCurrentWindowCost(windowConfig.getWindowSizeMillis(), now);
+        long windowSizeNanos = windowConfig.getWindowSizeMillis() * 1_000_000L;
+        long currentWindowCost = windowState.getCurrentWindowCost(windowSizeNanos, nowNanos);
         long maxCost = windowConfig.getMaxCost();
-        long resetTime = calculateResetTime(windowConfig, windowState, now);
+        long resetTimeMillis = calculateResetTimeMillis(windowConfig, windowState, nowNanos, nowMillis);
 
         if (currentWindowCost + cost <= maxCost) {
             long remainingCost = maxCost - (currentWindowCost + cost);
 
-            windowState.appendRequest(cost, now);
+            windowState.appendRequest(cost, nowNanos);
             builder.allowed(true)
                     .limit(maxCost)
                     .remaining(remainingCost)
-                    .resetAtMillis(resetTime);
+                    .resetAtMillis(resetTimeMillis)
+                    .retryAfterMillis(0);
             return builder.build();
         }
 
         builder.allowed(false)
                 .limit(maxCost)
                 .remaining(Math.max(0L, maxCost - currentWindowCost))
-                .retryAfterMillis(resetTime - now)
-                .resetAtMillis(resetTime);
+                .retryAfterMillis(Math.max(0L, resetTimeMillis - nowMillis))
+                .resetAtMillis(resetTimeMillis);
         return builder.build();
     }
 
@@ -54,9 +57,12 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
     /**
      * The Sliding window resets when the oldest request expires
      */
-    private long calculateResetTime(SlidingWindowConfig config, SlidingWindowState state, long now) {
-        return state.isWindowEmpty()
-                ? now + config.getWindowSizeMillis()
-                : state.getOldestTimestamp() + config.getWindowSizeMillis();
+    private long calculateResetTimeMillis(SlidingWindowConfig config, SlidingWindowState state, long nowNanos, long nowMillis) {
+        long windowSizeNanos = config.getWindowSizeMillis() * 1_000_000L;
+        long resetAtNanos = state.isWindowEmpty()
+                ? nowNanos + windowSizeNanos
+                : state.getOldestTimestampNanos() + windowSizeNanos;
+        long deltaMillis = Math.max(0L, (resetAtNanos - nowNanos) / 1_000_000L);
+        return nowMillis + deltaMillis;
     }
 }

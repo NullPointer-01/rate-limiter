@@ -11,13 +11,13 @@ public class SlidingWindowState implements RateLimitState {
         this.deque = new ArrayDeque<>();
     }
 
-    public void appendRequest(long cost, long timestamp) {
-        deque.add(new Request(cost, timestamp));
+    public void appendRequest(long cost, long timestampNanos) {
+        deque.add(new Request(cost, timestampNanos));
         currentWindowCost += cost;
     }
 
-    public long getCurrentWindowCost(long windowSizeMillis, long now) {
-        while (!deque.isEmpty() && now - deque.peekFirst().timestamp > windowSizeMillis) {
+    public long getCurrentWindowCost(long windowSizeNanos, long nowNanos) {
+        while (!deque.isEmpty() && nowNanos - deque.peekFirst().timestampNanos > windowSizeNanos) {
             currentWindowCost -= deque.pollFirst().cost;
         }
         return currentWindowCost;
@@ -27,18 +27,18 @@ public class SlidingWindowState implements RateLimitState {
         return deque.isEmpty();
     }
 
-    public long getOldestTimestamp() {
+    public long getOldestTimestampNanos() {
         assert deque.peekFirst() != null;
-        return deque.peekFirst().timestamp;
+        return deque.peekFirst().timestampNanos;
     }
 
     static class Request {
         long cost;
-        long timestamp;
+        long timestampNanos;
 
-        Request(long cost, long timestamp) {
+        Request(long cost, long timestampNanos) {
             this.cost = cost;
-            this.timestamp = timestamp;
+            this.timestampNanos = timestampNanos;
         }
     }
 }

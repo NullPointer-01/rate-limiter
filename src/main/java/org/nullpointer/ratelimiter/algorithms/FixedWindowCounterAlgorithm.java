@@ -22,14 +22,18 @@ public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
         FixedWindowCounterConfig windowConfig = (FixedWindowCounterConfig) config;
         FixedWindowCounterState windowState = (FixedWindowCounterState) state;
-        long now = System.currentTimeMillis();
+        long nowNanos = System.nanoTime();
+        long nowMillis = System.currentTimeMillis();
 
         RateLimitResult.Builder builder = RateLimitResult.builder();
-        long currentWindowId = now / windowConfig.getWindowSizeMillis();
+        long windowSizeNanos = windowConfig.getWindowSizeMillis() * 1_000_000L;
+        long currentWindowId = nowNanos / windowSizeNanos;
         long currentWindowUsed = windowState.getWindowCost(currentWindowId);
 
         long capacity = windowConfig.getCapacity();
-        long resetTime = (currentWindowId + 1) * windowConfig.getWindowSizeMillis(); // Start time of the next window
+        long resetAtNanos = (currentWindowId + 1) * windowSizeNanos; // Start time of the next window
+        long retryAfterMillis = Math.max(0L, (resetAtNanos - nowNanos) / 1_000_000L);
+        long resetTimeMillis = nowMillis + retryAfterMillis;
 
         if (currentWindowUsed + cost <= capacity) {
             long remainingCost = capacity - (currentWindowUsed + cost);
@@ -38,15 +42,16 @@ public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
             builder.allowed(true)
                     .limit(capacity)
                     .remaining(remainingCost)
-                    .resetAtMillis(resetTime);
+                    .resetAtMillis(resetTimeMillis)
+                    .retryAfterMillis(0);
             return builder.build();
         }
 
         builder.allowed(false)
                 .limit(capacity)
                 .remaining(Math.max(0L, capacity - currentWindowUsed))
-                .retryAfterMillis(resetTime - now)
-                .resetAtMillis(resetTime);
+                .retryAfterMillis(retryAfterMillis)
+                .resetAtMillis(resetTimeMillis);
         return builder.build();
     }
 }

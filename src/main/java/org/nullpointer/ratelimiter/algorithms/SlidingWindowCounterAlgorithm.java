@@ -24,22 +24,25 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
         SlidingWindowCounterConfig windowConfig = (SlidingWindowCounterConfig) config;
         SlidingWindowCounterState windowState = (SlidingWindowCounterState) state;
-        long now = System.currentTimeMillis();
+        long nowNanos = System.nanoTime();
+        long nowMillis = System.currentTimeMillis();
 
         RateLimitResult.Builder builder = RateLimitResult.builder();
-        long windowSizeMillis = windowConfig.getWindowSizeMillis();
-        long currentWindowId = now / windowSizeMillis;
+        long windowSizeNanos = windowConfig.getWindowSizeMillis() * 1_000_000L;
+        long currentWindowId = nowNanos / windowSizeNanos;
         long currentWindowUsed = windowState.getWindowCost(currentWindowId);
 
-        long currentWindowStart = currentWindowId * windowSizeMillis;
-        long elapsed = now - currentWindowStart;
+        long currentWindowStart = currentWindowId * windowSizeNanos;
+        long elapsed = nowNanos - currentWindowStart;
 
         long prevWindowUsed = windowState.getWindowCost(currentWindowId - 1);
-        double windowProgress = elapsed / (double) windowSizeMillis;
+        double windowProgress = elapsed / (double) windowSizeNanos;
         double weightedCost = currentWindowUsed + prevWindowUsed * (1 - windowProgress);
 
         long capacity = windowConfig.getCapacity();
-        long resetTime = (currentWindowId + 1) * windowSizeMillis; // Start time of the next window
+        long resetAtNanos = (currentWindowId + 1) * windowSizeNanos; // Start time of the next window
+        long retryAfterMillis = Math.max(0L, (resetAtNanos - nowNanos) / 1_000_000L);
+        long resetTimeMillis = nowMillis + retryAfterMillis;
 
         if (weightedCost + cost <= capacity) {
             long remainingCost = (long) Math.max(0, capacity - (weightedCost + cost)); // Use weighted cost for remaining
@@ -48,7 +51,8 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
             builder.allowed(true)
                     .limit(capacity)
                     .remaining(remainingCost)
-                    .resetAtMillis(resetTime);
+                    .resetAtMillis(resetTimeMillis)
+                    .retryAfterMillis(0);
             return builder.build();
         }
 
@@ -57,8 +61,8 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
         builder.allowed(false)
                 .limit(capacity)
                 .remaining(remaining) // Use weighted cost for remaining
-                .retryAfterMillis(resetTime - now)
-                .resetAtMillis(resetTime);
+                .retryAfterMillis(retryAfterMillis)
+                .resetAtMillis(resetTimeMillis);
         return builder.build();
     }
 }
