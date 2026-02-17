@@ -40,7 +40,7 @@ public class RateLimitKey {
             return builder.build();
         }
 
-        String[] parts = key.split(":");
+        String[] parts = key.split("\\|");
         for (String part : parts) {
             String[] keyValue = part.split("=", 2);
             if (keyValue.length != 2) {
