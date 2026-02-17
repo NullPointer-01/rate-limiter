@@ -1,0 +1,66 @@
+package org.nullpointer.ratelimiter.algorithms;
+
+import org.junit.jupiter.api.Test;
+import org.nullpointer.ratelimiter.model.RateLimitKey;
+import org.nullpointer.ratelimiter.model.RateLimitResult;
+import org.nullpointer.ratelimiter.model.config.SlidingWindowConfig;
+import org.nullpointer.ratelimiter.model.state.SlidingWindowState;
+
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class SlidingWindowAlgorithmTest {
+
+    @Test
+    void enforcesSlidingWindowCapacity() {
+        SlidingWindowConfig config = new SlidingWindowConfig(3, 1, TimeUnit.SECONDS);
+        SlidingWindowState state = new SlidingWindowState();
+        SlidingWindowAlgorithm algorithm = new SlidingWindowAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-1").build();
+
+        RateLimitResult r1 = algorithm.tryConsume(key, config, state, 1);
+        RateLimitResult r2 = algorithm.tryConsume(key, config, state, 1);
+        RateLimitResult r3 = algorithm.tryConsume(key, config, state, 1);
+        RateLimitResult r4 = algorithm.tryConsume(key, config, state, 1);
+
+        assertTrue(r1.isAllowed());
+        assertTrue(r2.isAllowed());
+        assertTrue(r3.isAllowed());
+        assertFalse(r4.isAllowed());
+        assertTrue(r4.getRetryAfterMillis() >= 0);
+    }
+
+    @Test
+    void allowsAfterWindowSlides() throws InterruptedException {
+        SlidingWindowConfig config = new SlidingWindowConfig(1, 5, TimeUnit.MILLISECONDS);
+        SlidingWindowState state = new SlidingWindowState();
+        SlidingWindowAlgorithm algorithm = new SlidingWindowAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-1").build();
+
+        RateLimitResult first = algorithm.tryConsume(key, config, state, 1);
+        RateLimitResult second = algorithm.tryConsume(key, config, state, 1);
+        long waitMillis = Math.max(1L, second.getRetryAfterMillis() + 1);
+        Thread.sleep(waitMillis);
+        RateLimitResult third = algorithm.tryConsume(key, config, state, 1);
+
+        assertTrue(first.isAllowed());
+        assertFalse(second.isAllowed());
+        assertTrue(third.isAllowed());
+    }
+
+    @Test
+    void remainingIsNeverNegativeOnDeny() {
+        SlidingWindowConfig config = new SlidingWindowConfig(2, 1, TimeUnit.SECONDS);
+        SlidingWindowState state = new SlidingWindowState();
+        SlidingWindowAlgorithm algorithm = new SlidingWindowAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-1").build();
+
+        algorithm.tryConsume(key, config, state, 1);
+        algorithm.tryConsume(key, config, state, 1);
+        RateLimitResult denied = algorithm.tryConsume(key, config, state, 1);
+
+        assertFalse(denied.isAllowed());
+        assertTrue(denied.getRemaining() >= 0);
+    }
+}
