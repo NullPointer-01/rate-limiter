@@ -4,11 +4,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SlidingWindowCounterState implements RateLimitState {
+    private final long originNanos;
     private final Map<Long, Long> windows;
     private final int nWindows = 5; // N oldest windows
 
     public SlidingWindowCounterState() {
         this.windows = new ConcurrentHashMap<>();
+        this.originNanos = System.nanoTime();
+    }
+
+    public long getOriginNanos() {
+        return originNanos;
     }
 
     public long getWindowCost(long windowId) {
