@@ -16,8 +16,6 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
-        cost = 1; // This implementation assumes all requests to be unit cost
-
         SlidingWindowConfig windowConfig = (SlidingWindowConfig) config;
         SlidingWindowState windowState = (SlidingWindowState) state;
         long nowNanos = System.nanoTime();
@@ -27,9 +25,19 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
         long windowSizeNanos = windowConfig.getWindowSizeMillis() * 1_000_000L;
         long currentWindowCost = windowState.getCurrentWindowCost(windowSizeNanos, nowNanos);
         long maxCost = windowConfig.getMaxCost();
-        long resetTimeMillis = calculateResetTimeMillis(windowConfig, windowState, nowNanos, nowMillis);
 
-        if (currentWindowCost + cost <= maxCost) {
+        long needed = (currentWindowCost + cost) - maxCost;
+        long resetTimeMillis;
+
+        if (needed > 0) {
+            long availableAtNanos = windowState.getTimestampWhenCapacityFreed(windowSizeNanos, nowNanos, needed);
+            long deltaMillis = Math.max(0L, (availableAtNanos - nowNanos) / 1_000_000L);
+            resetTimeMillis = nowMillis + deltaMillis;
+        } else {
+            resetTimeMillis = calculateResetTimeMillis(windowConfig, windowState, nowNanos, nowMillis);
+        }
+
+        if (needed <= 0) {
             long remainingCost = maxCost - (currentWindowCost + cost);
 
             windowState.appendRequest(cost, nowNanos);

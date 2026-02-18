@@ -16,7 +16,7 @@ public class Main {
     public static void main(String[] args) {
         demoDefaultConfig();
         demoTokenBucketRateLimiter();
-        demoSlidingWindowRateLimiter();
+        demoteLimiter();
         demoFixedWindowCounterRateLimiter();
     }
 
@@ -50,7 +50,7 @@ public class Main {
         }
     }
 
-    private static void demoSlidingWindowRateLimiter() {
+    private static void demoteLimiter() {
         Store store = new InMemoryStore();
         ConfigurationManager configManager = new ConfigurationManager(store);
 

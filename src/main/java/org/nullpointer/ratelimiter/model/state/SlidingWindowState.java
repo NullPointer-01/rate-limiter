@@ -32,6 +32,25 @@ public class SlidingWindowState implements RateLimitState {
         return deque.peekFirst().timestampNanos;
     }
 
+    /**
+     * Returns the timestamp at which enough requests have expired to free up 'requiredCost'.
+     */
+    public long getTimestampWhenCapacityFreed(long windowSizeNanos, long nowNanos, long requiredCost) {
+        long freedSoFar = 0;
+        for (Request req : deque) {
+            if (nowNanos - req.timestampNanos > windowSizeNanos) { // Skip already expired requests
+                continue;
+            }
+
+            freedSoFar += req.cost;
+            if (freedSoFar >= requiredCost) {
+                return req.timestampNanos + windowSizeNanos;
+            }
+        }
+
+        return nowNanos + windowSizeNanos; // After full window expires
+    }
+
     static class Request {
         long cost;
         long timestampNanos;
