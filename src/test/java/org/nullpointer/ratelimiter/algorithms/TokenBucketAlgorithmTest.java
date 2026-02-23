@@ -58,4 +58,36 @@ class TokenBucketAlgorithmTest {
         assertFalse(result.isAllowed());
         assertEquals(2, result.getRemaining());
     }
+
+    @Test
+    void multipleCost() {
+        TokenBucketConfig config = new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS);
+        RateLimitState state = config.initialRateLimitState();
+        TokenBucketAlgorithm algorithm = new TokenBucketAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-cost").build();
+
+        RateLimitResult r1 = algorithm.tryConsume(key, config, state, 2);
+        RateLimitResult r2 = algorithm.tryConsume(key, config, state, 3);
+        RateLimitResult r3 = algorithm.tryConsume(key, config, state, 1);
+
+        assertTrue(r1.isAllowed());
+        assertTrue(r2.isAllowed());
+        assertFalse(r3.isAllowed());
+    }
+
+    @Test
+    void differentKeysAreIndependent() {
+        TokenBucketConfig config = new TokenBucketConfig(1, 1, 1, TimeUnit.SECONDS);
+        TokenBucketAlgorithm algorithm = new TokenBucketAlgorithm();
+        RateLimitKey keyA = RateLimitKey.builder().setUserId("user-a").build();
+        RateLimitKey keyB = RateLimitKey.builder().setUserId("user-b").build();
+
+        RateLimitResult r1 = algorithm.tryConsume(keyA, config, config.initialRateLimitState(), 1);
+        RateLimitResult r2 = algorithm.tryConsume(keyB, config, config.initialRateLimitState(), 1);
+        RateLimitResult r3 = algorithm.tryConsume(keyA, config, config.initialRateLimitState(), 1);
+
+        assertTrue(r1.isAllowed());
+        assertTrue(r2.isAllowed());
+        assertTrue(r3.isAllowed());
+    }
 }

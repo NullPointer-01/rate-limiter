@@ -63,4 +63,32 @@ class FixedWindowCounterAlgorithmTest {
         assertFalse(denied.isAllowed());
         assertTrue(denied.getRemaining() >= 0);
     }
+
+    @Test
+    void multipleCost() {
+        FixedWindowCounterConfig config = new FixedWindowCounterConfig(5, 1, TimeUnit.SECONDS);
+        FixedWindowCounterState state = new FixedWindowCounterState();
+        FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-cost").build();
+
+        RateLimitResult r1 = algorithm.tryConsume(key, config, state, 2);
+        RateLimitResult r2 = algorithm.tryConsume(key, config, state, 3);
+        RateLimitResult r3 = algorithm.tryConsume(key, config, state, 1);
+
+        assertTrue(r1.isAllowed());
+        assertTrue(r2.isAllowed());
+        assertFalse(r3.isAllowed());
+    }
+
+    @Test
+    void differentKeysAreIndependent() {
+        FixedWindowCounterConfig config = new FixedWindowCounterConfig(1, 1, TimeUnit.SECONDS);
+        FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
+
+        RateLimitResult r1 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-a").build(), config, new FixedWindowCounterState(), 1);
+        RateLimitResult r2 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-b").build(), config, new FixedWindowCounterState(), 1);
+
+        assertTrue(r1.isAllowed());
+        assertTrue(r2.isAllowed());
+    }
 }

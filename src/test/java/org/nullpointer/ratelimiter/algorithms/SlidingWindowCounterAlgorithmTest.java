@@ -63,4 +63,32 @@ class SlidingWindowCounterAlgorithmTest {
         assertFalse(denied.isAllowed());
         assertTrue(denied.getRemaining() >= 0);
     }
+
+    @Test
+    void multipleCost() {
+        SlidingWindowCounterConfig config = new SlidingWindowCounterConfig(5, 1, TimeUnit.SECONDS);
+        SlidingWindowCounterState state = new SlidingWindowCounterState();
+        SlidingWindowCounterAlgorithm algorithm = new SlidingWindowCounterAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-cost").build();
+
+        RateLimitResult r1 = algorithm.tryConsume(key, config, state, 2);
+        RateLimitResult r2 = algorithm.tryConsume(key, config, state, 3);
+        RateLimitResult r3 = algorithm.tryConsume(key, config, state, 1);
+
+        assertTrue(r1.isAllowed());
+        assertTrue(r2.isAllowed());
+        assertFalse(r3.isAllowed());
+    }
+
+    @Test
+    void differentKeysAreIndependent() {
+        SlidingWindowCounterConfig config = new SlidingWindowCounterConfig(1, 1, TimeUnit.SECONDS);
+        SlidingWindowCounterAlgorithm algorithm = new SlidingWindowCounterAlgorithm();
+
+        RateLimitResult r1 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-a").build(), config, new SlidingWindowCounterState(), 1);
+        RateLimitResult r2 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-b").build(), config, new SlidingWindowCounterState(), 1);
+
+        assertTrue(r1.isAllowed());
+        assertTrue(r2.isAllowed());
+    }
 }
