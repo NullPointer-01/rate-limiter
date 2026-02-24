@@ -10,12 +10,12 @@ import org.nullpointer.ratelimiter.model.state.SlidingWindowState;
 public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
         return tryConsume(key, config, state, 1);
     }
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
         SlidingWindowConfig windowConfig = (SlidingWindowConfig) config;
         SlidingWindowState windowState = (SlidingWindowState) state;
         long nowNanos = System.nanoTime();

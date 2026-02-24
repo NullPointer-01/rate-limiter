@@ -10,12 +10,12 @@ import org.nullpointer.ratelimiter.model.state.TokenBucketState;
 public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
         return tryConsume(key, config, state, 1);
     }
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
         TokenBucketConfig bucketConfig = (TokenBucketConfig) config;
         TokenBucketState bucketState = (TokenBucketState) state;
         long nowNanos = System.nanoTime();

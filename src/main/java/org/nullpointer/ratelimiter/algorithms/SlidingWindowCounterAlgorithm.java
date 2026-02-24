@@ -10,12 +10,12 @@ import org.nullpointer.ratelimiter.model.state.SlidingWindowCounterState;
 public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
         return tryConsume(key, config, state, 1);
     }
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
         SlidingWindowCounterConfig windowConfig = (SlidingWindowCounterConfig) config;
         SlidingWindowCounterState windowState = (SlidingWindowCounterState) state;
         long nowMillis = System.currentTimeMillis();

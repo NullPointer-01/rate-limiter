@@ -10,12 +10,12 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
         return tryConsume(key, config, state, 1);
     }
 
     @Override
-    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
         FixedWindowCounterConfig windowConfig = (FixedWindowCounterConfig) config;
         FixedWindowCounterState windowState = (FixedWindowCounterState) state;
         long nowNanos = System.nanoTime();
