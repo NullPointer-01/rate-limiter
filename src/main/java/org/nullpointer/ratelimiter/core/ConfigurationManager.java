@@ -7,7 +7,7 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.storage.Store;
 
 public class ConfigurationManager {
-    private final Store store;
+    protected final Store store;
 
     public ConfigurationManager(Store store) {
         this.store = store;
