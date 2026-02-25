@@ -6,6 +6,8 @@ import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.TokenBucketState;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
+import java.util.Objects;
 
 public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
 
@@ -16,6 +18,12 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
+        Objects.requireNonNull(key, "RateLimitKey cannot be null");
+        Objects.requireNonNull(config, "RateLimitConfig cannot be null");
+
+        if (tokens <= 0) {
+            throw new InvalidRateLimitCostException("Cost must be positive");
+        }
         TokenBucketConfig bucketConfig = (TokenBucketConfig) config;
         TokenBucketState bucketState = (TokenBucketState) state;
         long nowNanos = System.nanoTime();

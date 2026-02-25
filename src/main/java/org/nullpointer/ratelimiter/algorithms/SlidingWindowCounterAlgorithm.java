@@ -6,6 +6,8 @@ import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.SlidingWindowCounterState;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
+import java.util.Objects;
 
 public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
@@ -16,6 +18,12 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+        Objects.requireNonNull(key, "RateLimitKey cannot be null");
+        Objects.requireNonNull(config, "RateLimitConfig cannot be null");
+
+        if (cost <= 0) {
+            throw new InvalidRateLimitCostException("Cost must be positive");
+        }
         SlidingWindowCounterConfig windowConfig = (SlidingWindowCounterConfig) config;
         SlidingWindowCounterState windowState = (SlidingWindowCounterState) state;
         long nowMillis = System.currentTimeMillis();

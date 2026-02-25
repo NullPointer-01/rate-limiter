@@ -6,6 +6,8 @@ import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.state.FixedWindowCounterState;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
+import java.util.Objects;
 
 public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
@@ -16,6 +18,12 @@ public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+        Objects.requireNonNull(key, "RateLimitKey cannot be null");
+        Objects.requireNonNull(config, "RateLimitConfig cannot be null");
+
+        if (cost <= 0) {
+            throw new InvalidRateLimitCostException("Cost must be positive");
+        }
         FixedWindowCounterConfig windowConfig = (FixedWindowCounterConfig) config;
         FixedWindowCounterState windowState = (FixedWindowCounterState) state;
         long nowNanos = System.nanoTime();

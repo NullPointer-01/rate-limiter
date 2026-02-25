@@ -5,6 +5,7 @@ import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 
 import java.util.concurrent.TimeUnit;
 
@@ -121,5 +122,20 @@ class TokenBucketAlgorithmTest {
 
         // We expect allowedCount to be exactly capacity because refill rate is negligible
         assertEquals(capacity, allowedCount.get());
+    }
+
+    @Test
+    void invalidCost() {
+        TokenBucketConfig config = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
+        RateLimitState state = config.initialRateLimitState();
+        TokenBucketAlgorithm algorithm = new TokenBucketAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-cost-test").build();
+
+        assertThrows(InvalidRateLimitCostException.class, () ->
+            algorithm.tryConsume(key, config, state, 0)
+        );
+        assertThrows(InvalidRateLimitCostException.class, () ->
+            algorithm.tryConsume(key, config, state, -1)
+        );
     }
 }

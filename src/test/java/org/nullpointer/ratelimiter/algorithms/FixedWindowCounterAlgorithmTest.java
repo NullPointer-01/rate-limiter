@@ -5,6 +5,7 @@ import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.state.FixedWindowCounterState;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 
 import java.util.concurrent.TimeUnit;
 
@@ -121,5 +122,20 @@ class FixedWindowCounterAlgorithmTest {
         assertTrue(finished);
 
         assertEquals(capacity, allowedCount.get());
+    }
+
+    @Test
+    void invalidCost() {
+        FixedWindowCounterConfig config = new FixedWindowCounterConfig(10, 1, TimeUnit.SECONDS);
+        FixedWindowCounterState state = new FixedWindowCounterState();
+        FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-cost-test").build();
+
+        assertThrows(InvalidRateLimitCostException.class, () ->
+            algorithm.tryConsume(key, config, state, 0)
+        );
+        assertThrows(InvalidRateLimitCostException.class, () ->
+            algorithm.tryConsume(key, config, state, -1)
+        );
     }
 }

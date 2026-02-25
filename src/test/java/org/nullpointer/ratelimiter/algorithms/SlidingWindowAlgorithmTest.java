@@ -5,6 +5,7 @@ import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowConfig;
 import org.nullpointer.ratelimiter.model.state.SlidingWindowState;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 
 import java.util.concurrent.TimeUnit;
 
@@ -127,5 +128,20 @@ class SlidingWindowAlgorithmTest {
 
         // We expect allowedCount to be exactly capacity, because the total requests (20*50=1000) > capacity (100)
         assertEquals(capacity, allowedCount.get());
+    }
+
+    @Test
+    void invalidCost() {
+        SlidingWindowConfig config = new SlidingWindowConfig(10, 1, TimeUnit.SECONDS);
+        SlidingWindowState state = new SlidingWindowState();
+        SlidingWindowAlgorithm algorithm = new SlidingWindowAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-cost-test").build();
+
+        assertThrows(InvalidRateLimitCostException.class, () ->
+            algorithm.tryConsume(key, config, state, 0)
+        );
+        assertThrows(InvalidRateLimitCostException.class, () ->
+            algorithm.tryConsume(key, config, state, -1)
+        );
     }
 }
