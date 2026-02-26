@@ -18,6 +18,15 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+        return evaluate(key, config, state, cost, false);
+    }
+
+    @Override
+    public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+        return evaluate(key, config, state, cost, true);
+    }
+
+    private synchronized RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost, boolean isReadOnly) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 
@@ -52,7 +61,9 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
             long retryAfterMillis = Math.max(0L, (resetAtNanos - nowNanos) / 1_000_000L);
             long resetTimeMillis = nowMillis + retryAfterMillis;
 
-            windowState.addCostToWindow(cost, currentWindowId);
+            if (!isReadOnly) {
+                windowState.addCostToWindow(cost, currentWindowId);
+            }
             builder.allowed(true)
                     .limit(capacity)
                     .remaining(remainingCost)
@@ -62,7 +73,7 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
         }
         long retryAfterNanos;
 
-        // Current window cannot accomodate the request
+        // Current window cannot accommodate the request
         if (currentWindowUsed + cost > capacity) {
             double maxAllowedFromOldCurrent = capacity - cost;
             double requiredProgress = 1.0 - (maxAllowedFromOldCurrent / (double) currentWindowUsed);

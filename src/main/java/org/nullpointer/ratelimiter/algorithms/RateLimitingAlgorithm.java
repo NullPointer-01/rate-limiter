@@ -10,4 +10,6 @@ public interface RateLimitingAlgorithm {
     RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state);
 
     RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost);
+
+    RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost);
 }

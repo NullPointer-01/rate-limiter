@@ -18,6 +18,15 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
+        return evaluate(key, config, state, tokens, false);
+    }
+
+    @Override
+    public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
+        return evaluate(key, config, state, tokens, true);
+    }
+
+    private RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens, boolean isReadOnly) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 
@@ -29,19 +38,26 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
         long nowNanos = System.nanoTime();
         long nowMillis = System.currentTimeMillis();
 
-        refill(bucketConfig, bucketState, nowNanos);
+        double availableTokens;
+        if (isReadOnly) {
+            availableTokens = computeRefilledTokens(bucketConfig, bucketState, nowNanos);
+        } else {
+            refill(bucketConfig, bucketState, nowNanos);
+            availableTokens = bucketState.getAvailableTokens();
+        }
 
         RateLimitResult.Builder builder = RateLimitResult.builder();
-        double availableTokens = bucketState.getAvailableTokens();
 
         if (availableTokens >= tokens) {
             double remainingTokens = availableTokens - tokens;
 
-            bucketState.setAvailableTokens(remainingTokens);
+            if (!isReadOnly) {
+                bucketState.setAvailableTokens(remainingTokens);
+            }
             builder.allowed(true)
                     .limit((long) Math.floor(bucketConfig.getCapacity()))
                     .remaining((long) Math.floor(remainingTokens))
-                    .resetAtMillis(calculateResetTime(bucketConfig, bucketState, nowMillis))
+                    .resetAtMillis(calculateResetTimeFromTokens(bucketConfig, remainingTokens, nowMillis))
                     .retryAfterMillis(0);
             return builder.build();
         }
@@ -57,7 +73,39 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
         return builder.build();
     }
 
-        private void refill(TokenBucketConfig config, TokenBucketState state, long nowNanos) {
+    /**
+     * Computes what the available tokens would be after refill, without mutating state.
+     */
+    private double computeRefilledTokens(TokenBucketConfig config, TokenBucketState state, long nowNanos) {
+        double capacity = config.getCapacity();
+        double refillTokens = config.getRefillTokens();
+        double refillIntervalNanos = config.getRefillIntervalMillis() * 1_000_000;
+
+        if (refillTokens <= 0 || refillIntervalNanos <= 0) {
+            return state.getAvailableTokens();
+        }
+
+        double availableTokens = state.getAvailableTokens();
+        long lastRefillNanos = state.getLastRefillNanos();
+
+        long elapsedNanos = nowNanos - lastRefillNanos;
+        if (elapsedNanos > 0) {
+            double tokensToAdd = (refillTokens * elapsedNanos) / refillIntervalNanos;
+            if (tokensToAdd > 0) {
+                availableTokens = Math.min(capacity, availableTokens + tokensToAdd);
+            }
+        }
+        return availableTokens;
+    }
+
+    private long calculateResetTimeFromTokens(TokenBucketConfig config, double remainingTokens, long nowMillis) {
+        double tokensToFill = config.getCapacity() - remainingTokens;
+        if (tokensToFill <= 0) return nowMillis;
+        long retryAfterMillis = (long) Math.ceil(tokensToFill * config.getRefillIntervalMillis() / config.getRefillTokens());
+        return nowMillis + retryAfterMillis;
+    }
+
+    private void refill(TokenBucketConfig config, TokenBucketState state, long nowNanos) {
         double capacity = config.getCapacity();
         double refillTokens = config.getRefillTokens();
         double refillIntervalNanos = config.getRefillIntervalMillis() * 1_000_000;
@@ -83,13 +131,5 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
                 state.setAvailableTokens(availableTokens);
             }
         }
-    }
-
-    private long calculateResetTime(TokenBucketConfig config, TokenBucketState state, long now) {
-        double tokensToFill = config.getCapacity() - state.getAvailableTokens();
-        if (tokensToFill <= 0) return now;
-
-        long retryAfterMillis = (long) Math.ceil(tokensToFill * config.getRefillIntervalMillis() / config.getRefillTokens());
-        return now + retryAfterMillis;
     }
 }

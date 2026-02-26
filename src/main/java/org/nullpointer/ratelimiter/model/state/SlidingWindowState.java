@@ -16,6 +16,9 @@ public class SlidingWindowState implements RateLimitState {
         currentWindowCost += cost;
     }
 
+    /**
+     * Allows only querying monotonically increasing nowNanos
+     */
     public long getCurrentWindowCost(long windowSizeNanos, long nowNanos) {
         while (!deque.isEmpty() && nowNanos - deque.peekFirst().timestampNanos > windowSizeNanos) {
             currentWindowCost -= deque.pollFirst().cost;

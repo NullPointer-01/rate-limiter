@@ -144,4 +144,29 @@ class SlidingWindowAlgorithmTest {
             algorithm.tryConsume(key, config, state, -1)
         );
     }
+
+    @Test
+    void canConsumeDoesNotMutateState() {
+        SlidingWindowConfig config = new SlidingWindowConfig(5, 1, TimeUnit.MINUTES);
+        SlidingWindowState state = new SlidingWindowState();
+        SlidingWindowAlgorithm algorithm = new SlidingWindowAlgorithm();
+        RateLimitKey key = RateLimitKey.builder().setUserId("user-peek").build();
+
+        RateLimitResult peek1 = algorithm.checkLimit(key, config, state, 3);
+        assertTrue(peek1.isAllowed());
+        assertEquals(2, peek1.getRemaining());
+
+        // State unchanged — canConsume again should return the same result
+        RateLimitResult peek2 = algorithm.checkLimit(key, config, state, 3);
+        assertTrue(peek2.isAllowed());
+        assertEquals(2, peek2.getRemaining());
+
+        // Actually consume
+        RateLimitResult consume = algorithm.tryConsume(key, config, state, 3);
+        assertTrue(consume.isAllowed());
+
+        // After real consumption, canConsume for 3 more should fail
+        RateLimitResult peek3 = algorithm.checkLimit(key, config, state, 3);
+        assertFalse(peek3.isAllowed());
+    }
 }

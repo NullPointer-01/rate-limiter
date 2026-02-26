@@ -17,29 +17,36 @@ public class HierarchicalRateLimitEngine {
 
     public RateLimitResult process(RateLimitKey key, int cost) {
         HierarchicalRateLimitConfig config = this.configurationManager.getHierarchicalConfig(key);
-        RateLimitResult lastResult = null;
 
+        // Phase 1: Dry-run — check all levels without consuming quota
         for (RateLimitLevel level : config.getLevels()) {
             RateLimitConfig levelConfig = level.getConfig();
             RateLimitKey levelKey = level.getKey();
 
             RateLimitState state = this.configurationManager.getHierarchicalState(levelKey);
-
             if (state == null) {
                 state = levelConfig.initialRateLimitState();
                 this.configurationManager.setHierarchicalState(levelKey, state);
             }
 
             RateLimitingAlgorithm algorithm = levelConfig.getAlgorithm();
-            RateLimitResult result = algorithm.tryConsume(levelKey, levelConfig, state, cost);
+            RateLimitResult result = algorithm.checkLimit(levelKey, levelConfig, state, cost);
 
-            // Phantom consumption issue - Limits from earlier levels are still consumed even if later level rejects.
-            // Deny request on first reject
+            // If any level denies, return immediately without consuming from any level
             if (!result.isAllowed()) {
                 return result;
             }
+        }
 
-            lastResult = result;
+        // Phase 2: All levels allow — commit consumption at every level
+        RateLimitResult lastResult = null;
+        for (RateLimitLevel level : config.getLevels()) {
+            RateLimitConfig levelConfig = level.getConfig();
+            RateLimitKey levelKey = level.getKey();
+            RateLimitState state = this.configurationManager.getHierarchicalState(levelKey);
+
+            RateLimitingAlgorithm algorithm = levelConfig.getAlgorithm();
+            lastResult = algorithm.tryConsume(levelKey, levelConfig, state, cost);
         }
 
         return lastResult;

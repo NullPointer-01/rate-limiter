@@ -18,6 +18,15 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+        return evaluate(key, config, state, cost, false);
+    }
+
+    @Override
+    public synchronized RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
+        return evaluate(key, config, state, cost, true);
+    }
+
+    private synchronized RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost, boolean isReadOnly) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 
@@ -48,7 +57,9 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
         if (needed <= 0) {
             long remainingCost = maxCost - (currentWindowCost + cost);
 
-            windowState.appendRequest(cost, nowNanos);
+            if (!isReadOnly) {
+                windowState.appendRequest(cost, nowNanos);
+            }
             builder.allowed(true)
                     .limit(maxCost)
                     .remaining(remainingCost)
@@ -64,7 +75,6 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
                 .resetAtMillis(resetTimeMillis);
         return builder.build();
     }
-
 
     /**
      * The Sliding window resets when the oldest request expires
