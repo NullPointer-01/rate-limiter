@@ -1,32 +1,34 @@
 package org.nullpointer.ratelimiter.algorithms;
 
-import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
+import org.nullpointer.ratelimiter.model.RequestTime;
+import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.TokenBucketState;
-import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
+
 import java.util.Objects;
 
 public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
-        return tryConsume(key, config, state, 1);
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
+        return tryConsume(key, config, state, time, 1);
     }
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
-        return evaluate(key, config, state, tokens, false);
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long tokens) {
+        return evaluate(key, config, state, time, tokens, false);
     }
 
     @Override
-    public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens) {
-        return evaluate(key, config, state, tokens, true);
+    public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long tokens) {
+        return evaluate(key, config, state, time, tokens, true);
     }
 
-    private RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, long tokens, boolean isReadOnly) {
+    private RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long tokens, boolean isReadOnly) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 
@@ -35,8 +37,9 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
         }
         TokenBucketConfig bucketConfig = (TokenBucketConfig) config;
         TokenBucketState bucketState = (TokenBucketState) state;
-        long nowNanos = System.nanoTime();
-        long nowMillis = System.currentTimeMillis();
+
+        long nowNanos = time.nanoTime();
+        long nowMillis = time.currentTimeMillis();
 
         double availableTokens;
         if (isReadOnly) {

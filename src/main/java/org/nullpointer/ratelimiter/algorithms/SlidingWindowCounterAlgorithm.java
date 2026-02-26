@@ -1,32 +1,34 @@
 package org.nullpointer.ratelimiter.algorithms;
 
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
+import org.nullpointer.ratelimiter.model.RequestTime;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.SlidingWindowCounterState;
-import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
+
 import java.util.Objects;
 
 public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state) {
-        return tryConsume(key, config, state, 1);
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
+        return tryConsume(key, config, state, time, 1);
     }
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
-        return evaluate(key, config, state, cost, false);
+    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
+        return evaluate(key, config, state, time, cost, false);
     }
 
     @Override
-    public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost) {
-        return evaluate(key, config, state, cost, true);
+    public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
+        return evaluate(key, config, state, time, cost, true);
     }
 
-    private synchronized RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, long cost, boolean isReadOnly) {
+    private synchronized RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost, boolean isReadOnly) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 
@@ -35,9 +37,10 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
         }
         SlidingWindowCounterConfig windowConfig = (SlidingWindowCounterConfig) config;
         SlidingWindowCounterState windowState = (SlidingWindowCounterState) state;
-        long nowMillis = System.currentTimeMillis();
 
-        long nowNanos = System.nanoTime();
+        long nowMillis = time.currentTimeMillis();
+        long nowNanos = time.nanoTime();
+
         long origin = windowState.getOriginNanos();
         long windowSizeNanos = windowConfig.getWindowSizeMillis() * 1_000_000L;
 

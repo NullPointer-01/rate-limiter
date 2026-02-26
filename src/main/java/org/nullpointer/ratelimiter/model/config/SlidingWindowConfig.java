@@ -2,7 +2,6 @@ package org.nullpointer.ratelimiter.model.config;
 
 import org.nullpointer.ratelimiter.algorithms.AlgorithmType;
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
-import org.nullpointer.ratelimiter.algorithms.SlidingWindowAlgorithm;
 import org.nullpointer.ratelimiter.algorithms.factory.AlgorithmFactory;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.SlidingWindowState;
@@ -32,7 +31,7 @@ public class SlidingWindowConfig implements RateLimitConfig {
     }
 
     @Override
-    public RateLimitState initialRateLimitState() {
+    public RateLimitState initialRateLimitState(long nanoTime) {
         return new SlidingWindowState();
     }
 }

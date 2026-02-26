@@ -6,5 +6,5 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 public interface RateLimitConfig {
    RateLimitingAlgorithm getAlgorithm();
 
-   RateLimitState initialRateLimitState();
+   RateLimitState initialRateLimitState(long nanoTime);
 }

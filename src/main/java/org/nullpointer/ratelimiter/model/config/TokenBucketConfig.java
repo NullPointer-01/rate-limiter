@@ -37,7 +37,7 @@ public class TokenBucketConfig implements RateLimitConfig {
     }
 
     @Override
-    public RateLimitState initialRateLimitState() {
-        return new TokenBucketState(capacity, System.nanoTime());
+    public RateLimitState initialRateLimitState(long nanoTime) {
+        return new TokenBucketState(capacity, nanoTime);
     }
 }

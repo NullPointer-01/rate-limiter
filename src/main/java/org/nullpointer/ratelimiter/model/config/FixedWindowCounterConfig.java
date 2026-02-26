@@ -31,7 +31,7 @@ public class FixedWindowCounterConfig implements RateLimitConfig {
     }
 
     @Override
-    public RateLimitState initialRateLimitState() {
+    public RateLimitState initialRateLimitState(long nanoTime) {
         return new FixedWindowCounterState();
     }
 }

@@ -8,9 +8,9 @@ public class SlidingWindowCounterState implements RateLimitState {
     private final Map<Long, Long> windows;
     private final int nWindows = 5; // N oldest windows
 
-    public SlidingWindowCounterState() {
+    public SlidingWindowCounterState(long nanoTime) {
         this.windows = new ConcurrentHashMap<>();
-        this.originNanos = System.nanoTime();
+        this.originNanos = nanoTime;
     }
 
     public long getOriginNanos() {

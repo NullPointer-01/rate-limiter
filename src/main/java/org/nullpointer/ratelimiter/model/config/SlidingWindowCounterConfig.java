@@ -31,7 +31,7 @@ public class SlidingWindowCounterConfig implements RateLimitConfig {
     }
 
     @Override
-    public RateLimitState initialRateLimitState() {
-        return new SlidingWindowCounterState();
+    public RateLimitState initialRateLimitState(long nanoTime) {
+        return new SlidingWindowCounterState(nanoTime);
     }
 }

@@ -1,12 +1,12 @@
 package org.nullpointer.ratelimiter.algorithms;
 
 import org.junit.jupiter.api.Test;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.state.FixedWindowCounterState;
-import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
-
+import org.nullpointer.ratelimiter.model.RequestTime;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -19,11 +19,12 @@ class FixedWindowCounterAlgorithmTest {
         FixedWindowCounterState state = new FixedWindowCounterState();
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
         RateLimitKey key = RateLimitKey.builder().setUserId("user-1").build();
+        RequestTime now = new RequestTime(1000L, 1000000000L);
 
-        RateLimitResult r1 = algorithm.tryConsume(key, config, state, 1);
-        RateLimitResult r2 = algorithm.tryConsume(key, config, state, 1);
-        RateLimitResult r3 = algorithm.tryConsume(key, config, state, 1);
-        RateLimitResult r4 = algorithm.tryConsume(key, config, state, 1);
+        RateLimitResult r1 = algorithm.tryConsume(key, config, state, now);
+        RateLimitResult r2 = algorithm.tryConsume(key, config, state, now);
+        RateLimitResult r3 = algorithm.tryConsume(key, config, state, now);
+        RateLimitResult r4 = algorithm.tryConsume(key, config, state, now);
 
         assertTrue(r1.isAllowed());
         assertTrue(r2.isAllowed());
@@ -34,20 +35,27 @@ class FixedWindowCounterAlgorithmTest {
     }
 
     @Test
-    void newWindowAllowsAfterWait() throws InterruptedException {
+    void newWindowAllowsAfterWait() {
         FixedWindowCounterConfig config = new FixedWindowCounterConfig(1, 5, TimeUnit.MILLISECONDS);
         FixedWindowCounterState state = new FixedWindowCounterState();
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
         RateLimitKey key = RateLimitKey.builder().setUserId("user-1").build();
 
-        RateLimitResult first = algorithm.tryConsume(key, config, state, 1);
-        RateLimitResult second = algorithm.tryConsume(key, config, state, 1);
-        long waitMillis = Math.max(1L, second.getRetryAfterMillis() + 1);
-        Thread.sleep(waitMillis);
-        RateLimitResult third = algorithm.tryConsume(key, config, state, 1);
+        long startMillis = 10000;
+        RequestTime t1 = new RequestTime(startMillis, startMillis * 1_000_000);
+
+        RateLimitResult first = algorithm.tryConsume(key, config, state, t1, 1);
+        RateLimitResult second = algorithm.tryConsume(key, config, state, t1, 1);
 
         assertTrue(first.isAllowed());
         assertFalse(second.isAllowed());
+
+        long waitMillis = Math.max(1L, second.getRetryAfterMillis() + 1);
+        long nextMillis = startMillis + waitMillis;
+        RequestTime t2 = new RequestTime(nextMillis, nextMillis * 1_000_000);
+
+        RateLimitResult third = algorithm.tryConsume(key, config, state, t2, 1);
+
         assertTrue(third.isAllowed());
     }
 
@@ -57,9 +65,10 @@ class FixedWindowCounterAlgorithmTest {
         FixedWindowCounterState state = new FixedWindowCounterState();
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
         RateLimitKey key = RateLimitKey.builder().setUserId("user-1").build();
+        RequestTime now = new RequestTime(1000, 1000_000_000);
 
-        algorithm.tryConsume(key, config, state, 2);
-        RateLimitResult denied = algorithm.tryConsume(key, config, state, 1);
+        algorithm.tryConsume(key, config, state, now, 2);
+        RateLimitResult denied = algorithm.tryConsume(key, config, state, now, 1);
 
         assertFalse(denied.isAllowed());
         assertTrue(denied.getRemaining() >= 0);
@@ -71,10 +80,11 @@ class FixedWindowCounterAlgorithmTest {
         FixedWindowCounterState state = new FixedWindowCounterState();
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
         RateLimitKey key = RateLimitKey.builder().setUserId("user-cost").build();
+        RequestTime now = new RequestTime(1000, 1000_000_000);
 
-        RateLimitResult r1 = algorithm.tryConsume(key, config, state, 2);
-        RateLimitResult r2 = algorithm.tryConsume(key, config, state, 3);
-        RateLimitResult r3 = algorithm.tryConsume(key, config, state, 1);
+        RateLimitResult r1 = algorithm.tryConsume(key, config, state, now, 2);
+        RateLimitResult r2 = algorithm.tryConsume(key, config, state, now, 3);
+        RateLimitResult r3 = algorithm.tryConsume(key, config, state, now, 1);
 
         assertTrue(r1.isAllowed());
         assertTrue(r2.isAllowed());
@@ -85,9 +95,10 @@ class FixedWindowCounterAlgorithmTest {
     void differentKeysAreIndependent() {
         FixedWindowCounterConfig config = new FixedWindowCounterConfig(1, 1, TimeUnit.SECONDS);
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
+        RequestTime now = new RequestTime(1000, 1000_000_000);
 
-        RateLimitResult r1 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-a").build(), config, new FixedWindowCounterState(), 1);
-        RateLimitResult r2 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-b").build(), config, new FixedWindowCounterState(), 1);
+        RateLimitResult r1 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-a").build(), config, new FixedWindowCounterState(), now, 1);
+        RateLimitResult r2 = algorithm.tryConsume(RateLimitKey.builder().setUserId("user-b").build(), config, new FixedWindowCounterState(), now, 1);
 
         assertTrue(r1.isAllowed());
         assertTrue(r2.isAllowed());
@@ -97,12 +108,13 @@ class FixedWindowCounterAlgorithmTest {
     void testConcurrency() throws InterruptedException {
         int threadCount = 20;
         int requestsPerThread = 50;
-        int capacity = 100; // Total allowed requests
+        int capacity = 1000; // Total allowed
 
         FixedWindowCounterConfig config = new FixedWindowCounterConfig(capacity, 10, TimeUnit.SECONDS);
         FixedWindowCounterState state = new FixedWindowCounterState();
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
         RateLimitKey key = RateLimitKey.builder().setUserId("user").build();
+        RequestTime now = new RequestTime(1000, 1000_000_000);
 
         java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
         java.util.concurrent.atomic.AtomicInteger allowedCount = new java.util.concurrent.atomic.AtomicInteger(0);
@@ -110,7 +122,7 @@ class FixedWindowCounterAlgorithmTest {
         for (int i = 0; i < threadCount; i++) {
             executor.submit(() -> {
                 for (int j = 0; j < requestsPerThread; j++) {
-                    if (algorithm.tryConsume(key, config, state, 1).isAllowed()) {
+                    if (algorithm.tryConsume(key, config, state, now, 1).isAllowed()) {
                         allowedCount.incrementAndGet();
                     }
                 }
@@ -121,7 +133,7 @@ class FixedWindowCounterAlgorithmTest {
         boolean finished = executor.awaitTermination(5, TimeUnit.SECONDS);
         assertTrue(finished);
 
-        assertEquals(capacity, allowedCount.get());
+        assertEquals(1000, allowedCount.get());
     }
 
     @Test
@@ -130,12 +142,13 @@ class FixedWindowCounterAlgorithmTest {
         FixedWindowCounterState state = new FixedWindowCounterState();
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
         RateLimitKey key = RateLimitKey.builder().setUserId("user-cost-test").build();
+        RequestTime now = new RequestTime(1000, 1000_000_000);
 
         assertThrows(InvalidRateLimitCostException.class, () ->
-            algorithm.tryConsume(key, config, state, 0)
+            algorithm.tryConsume(key, config, state, now, 0)
         );
         assertThrows(InvalidRateLimitCostException.class, () ->
-            algorithm.tryConsume(key, config, state, -1)
+            algorithm.tryConsume(key, config, state, now, -1)
         );
     }
 
@@ -145,22 +158,23 @@ class FixedWindowCounterAlgorithmTest {
         FixedWindowCounterState state = new FixedWindowCounterState();
         FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
         RateLimitKey key = RateLimitKey.builder().setUserId("user-peek").build();
+        RequestTime now = new RequestTime(1000, 1000_000_000);
 
-        RateLimitResult peek1 = algorithm.checkLimit(key, config, state, 3);
+        RateLimitResult peek1 = algorithm.checkLimit(key, config, state, now, 3);
         assertTrue(peek1.isAllowed());
         assertEquals(2, peek1.getRemaining());
 
         // State unchanged — canConsume again should return the same result
-        RateLimitResult peek2 = algorithm.checkLimit(key, config, state, 3);
+        RateLimitResult peek2 = algorithm.checkLimit(key, config, state, now, 3);
         assertTrue(peek2.isAllowed());
         assertEquals(2, peek2.getRemaining());
 
         // Actually consume
-        RateLimitResult consume = algorithm.tryConsume(key, config, state, 3);
+        RateLimitResult consume = algorithm.tryConsume(key, config, state, now, 3);
         assertTrue(consume.isAllowed());
 
         // After real consumption, canConsume for 3 more should fail
-        RateLimitResult peek3 = algorithm.checkLimit(key, config, state, 3);
+        RateLimitResult peek3 = algorithm.checkLimit(key, config, state, now, 3);
         assertFalse(peek3.isAllowed());
     }
 }
