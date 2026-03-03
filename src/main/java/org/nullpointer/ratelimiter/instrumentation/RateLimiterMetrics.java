@@ -22,4 +22,8 @@ public class RateLimiterMetrics {
         rejected.incrementAndGet();
         total.incrementAndGet();
     }
+
+    public double getRejectionRate() {
+        return (double) 100 * rejected.get() / total.get();
+    }
 }
