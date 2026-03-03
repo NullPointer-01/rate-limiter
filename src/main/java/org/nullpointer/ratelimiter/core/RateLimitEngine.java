@@ -27,8 +27,8 @@ public class RateLimitEngine {
             state = config.initialRateLimitState(time.nanoTime());
             this.configurationManager.setState(key, state);
         }
-        RateLimitingAlgorithm algorithm = config.getAlgorithm();
 
+        RateLimitingAlgorithm algorithm = config.getAlgorithm();
         return algorithm.tryConsume(key, config, state, time, cost);
     }
 }

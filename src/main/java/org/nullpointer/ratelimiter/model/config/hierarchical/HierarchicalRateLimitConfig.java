@@ -1,6 +1,5 @@
 package org.nullpointer.ratelimiter.model.config.hierarchical;
 
-import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 
 import java.util.ArrayList;
@@ -14,9 +13,10 @@ public class HierarchicalRateLimitConfig {
         this.levels = new ArrayList<>();
     }
 
-    public void addLevel(RateLimitConfig config, RateLimitKey key) {
-        RateLimitLevel level = new RateLimitLevel(levels.size() + 1, config, key);
+    public void addPolicy(RateLimitScope scope, RateLimitConfig defaultConfig) {
+        RateLimitLevel level = new RateLimitLevel(scope, defaultConfig);
         levels.add(level);
+        Collections.sort(levels);
     }
 
     public List<RateLimitLevel> getLevels() {

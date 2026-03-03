@@ -2,69 +2,53 @@ package org.nullpointer.ratelimiter.model;
 
 import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitKeyException;
 
-public class RateLimitKey {
-    private final String userId;
-    private final String ipAddress;
-    private final String domain;
-    private final String api;
+import java.util.Objects;
 
-    private RateLimitKey(Builder builder) {
-        this.userId = builder.userId;
-        this.ipAddress = builder.ipAddress;
-        this.api = builder.api;
-        this.domain = builder.domain;
+public class RateLimitKey {
+    private final String key;
+
+    public RateLimitKey(String key) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key cannot be null");
+        }
+        this.key = key;
+    }
+
+    public String toKey() {
+        if (key.isBlank()) {
+            throw new InvalidRateLimitKeyException("Rate limit key is invalid. Set atleast one value");
+        }
+        return key;
     }
 
     public static Builder builder() {
         return new Builder();
     }
 
-    public String toKey() {
-        StringBuilder sb = new StringBuilder();
-        appendPart(sb, "user", userId);
-        appendPart(sb, "ip", ipAddress);
-        appendPart(sb, "domain", domain);
-        appendPart(sb, "api", api);
-
-        String key = sb.toString();
-        if (key.isBlank()) {
-            throw new InvalidRateLimitKeyException("Rate limit key is invalid. Set atleast one value");
+    public static RateLimitKey fromKey(String key) {
+        if (key == null || key.isBlank()) {
+            return builder().build();
         }
+        return new RateLimitKey(key);
+    }
 
+    @Override
+    public String toString() {
         return key;
     }
 
-    public static RateLimitKey fromKey(String key) {
-        Builder builder = builder();
-        if (key == null || key.isBlank()) {
-            return builder.build();
-        }
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
 
-        String[] parts = key.split("\\|");
-        for (String part : parts) {
-            String[] keyValue = part.split("=", 2);
-            if (keyValue.length != 2) {
-                continue;
-            }
-            switch (keyValue[0]) {
-                case "user" -> builder.setUserId(keyValue[1]);
-                case "ip" -> builder.setIpAddress(keyValue[1]);
-                case "domain" -> builder.setDomain(keyValue[1]);
-                case "api" -> builder.setApi(keyValue[1]);
-                default -> {}
-            }
-        }
-        return builder.build();
+        RateLimitKey rateLimitKey = (RateLimitKey) o;
+        return Objects.equals(key, rateLimitKey.key);
     }
 
-    private static void appendPart(StringBuilder sb, String key, String value) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
-        if (!sb.isEmpty()) {
-            sb.append(":");
-        }
-        sb.append(key).append("=").append(value);
+    @Override
+    public int hashCode() {
+        return Objects.hash(key);
     }
 
     public static class Builder {
@@ -94,7 +78,23 @@ public class RateLimitKey {
         }
 
         public RateLimitKey build() {
-            return new RateLimitKey(this);
+            StringBuilder sb = new StringBuilder();
+            appendPart(sb, "user", userId);
+            appendPart(sb, "ip", ipAddress);
+            appendPart(sb, "domain", domain);
+            appendPart(sb, "api", api);
+
+            return new RateLimitKey(sb.toString());
+        }
+
+        private static void appendPart(StringBuilder sb, String key, String value) {
+            if (value == null || value.isBlank()) {
+                return;
+            }
+            if (!sb.isEmpty()) { // No colon prefix for the first part
+                sb.append(":");
+            }
+            sb.append(key).append("=").append(value);
         }
     }
 }

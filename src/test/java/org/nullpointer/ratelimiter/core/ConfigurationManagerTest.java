@@ -8,7 +8,8 @@ import org.nullpointer.ratelimiter.storage.InMemoryStore;
 
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ConfigurationManagerTest {
 

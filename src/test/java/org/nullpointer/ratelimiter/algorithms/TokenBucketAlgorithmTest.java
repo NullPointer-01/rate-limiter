@@ -1,14 +1,12 @@
 package org.nullpointer.ratelimiter.algorithms;
 
 import org.junit.jupiter.api.Test;
-import org.nullpointer.ratelimiter.core.hierarchical.HierarchicalConfigurationManager;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestTime;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
-import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
-import org.nullpointer.ratelimiter.storage.InMemoryStore;
 
 import java.util.concurrent.TimeUnit;
 

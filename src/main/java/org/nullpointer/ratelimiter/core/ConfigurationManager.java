@@ -1,8 +1,8 @@
 package org.nullpointer.ratelimiter.core;
 
 import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
-import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
+import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.storage.Store;
 

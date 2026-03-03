@@ -3,58 +3,73 @@ package org.nullpointer.ratelimiter.core.hierarchical;
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
+import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.RequestTime;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
+import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
+import org.nullpointer.ratelimiter.utils.RateLimitKeyGenerator;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
 public class HierarchicalRateLimitEngine {
     private final HierarchicalConfigurationManager configurationManager;
     private final TimeSource timeSource;
+    private final RateLimitKeyGenerator keyGenerator;
 
     public HierarchicalRateLimitEngine(HierarchicalConfigurationManager configurationManager) {
         this.configurationManager = configurationManager;
         this.timeSource = new SystemTimeSource();
+        this.keyGenerator = new RateLimitKeyGenerator();
     }
 
-    public RateLimitResult process(RateLimitKey key, int cost) {
-        HierarchicalRateLimitConfig config = this.configurationManager.getHierarchicalConfig(key);
+    public RateLimitResult process(RequestContext context, int cost) {
         RequestTime time = timeSource.capture();
+        RateLimitResult lastResult = null;
 
-        // Phase 1: Dry-run — check all levels without consuming quota
-        for (RateLimitLevel level : config.getLevels()) {
-            RateLimitConfig levelConfig = level.getConfig();
-            RateLimitKey levelKey = level.getKey();
+        HierarchicalRateLimitConfig hierarchyPolicy = configurationManager.getHierarchyPolicy();
 
-            RateLimitState state = this.configurationManager.getHierarchicalState(levelKey);
-            if (state == null) {
-                state = levelConfig.initialRateLimitState(time.nanoTime());
-                this.configurationManager.setHierarchicalState(levelKey, state);
+        // Dry-run check for all levels
+        for (RateLimitLevel level : hierarchyPolicy.getLevels()) {
+            RateLimitScope scope = level.getScope();
+
+            // Retrieve config from store, else pick the default configuration from the level
+            RateLimitConfig config = configurationManager.resolveConfig(scope, context);
+            if (config == null) config = level.getDefaultConfig();
+
+            RateLimitKey key = keyGenerator.generate(scope, context);
+            RateLimitState state = this.configurationManager.getState(key);
+
+            if (state == null) { // Create state for first time
+                state = config.initialRateLimitState(time.nanoTime());
+                this.configurationManager.setState(key, state);
             }
 
-            RateLimitingAlgorithm algorithm = levelConfig.getAlgorithm();
-            RateLimitResult result = algorithm.checkLimit(levelKey, levelConfig, state, time, cost);
+            RateLimitingAlgorithm algorithm = config.getAlgorithm();
+            RateLimitResult result = algorithm.checkLimit(key, config, state, time, cost);
 
-            // If any level denies, return immediately without consuming from any level
+            // If any level denies, return immediately without consuming from previous levels
             if (!result.isAllowed()) {
                 return result;
             }
         }
 
-        // Phase 2: All levels allow — commit consumption at every level
-        RateLimitResult lastResult = null;
-        for (RateLimitLevel level : config.getLevels()) {
-            RateLimitConfig levelConfig = level.getConfig();
-            RateLimitKey levelKey = level.getKey();
-            RateLimitState state = this.configurationManager.getHierarchicalState(levelKey);
+        // Consume quotas for all levels
+        for (RateLimitLevel level : hierarchyPolicy.getLevels()) {
+            RateLimitScope scope = level.getScope();
 
-            RateLimitingAlgorithm algorithm = levelConfig.getAlgorithm();
-            lastResult = algorithm.tryConsume(levelKey, levelConfig, state, time, cost);
+            RateLimitConfig config = configurationManager.resolveConfig(scope, context);
+            if (config == null) config = level.getDefaultConfig();
+
+            RateLimitKey key = keyGenerator.generate(scope, context);
+            RateLimitState state = this.configurationManager.getState(key);
+
+            RateLimitingAlgorithm algorithm = config.getAlgorithm();
+            lastResult = algorithm.tryConsume(key, config, state, time, cost);
         }
 
-        return lastResult;
+        return lastResult; // Should never be null
     }
 }

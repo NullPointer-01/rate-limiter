@@ -4,8 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
+import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.TokenBucketState;
 import org.nullpointer.ratelimiter.storage.InMemoryStore;
@@ -23,40 +25,6 @@ class HierarchicalConfigurationManagerTest {
     void setUp() {
         store = new InMemoryStore();
         manager = new HierarchicalConfigurationManager(store);
-    }
-
-    @Test
-    void setAndGetHierarchicalConfig() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("user1").build();
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(
-                new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS),
-                RateLimitKey.builder().setUserId("user1").build()
-        );
-
-        manager.setHierarchicalConfig(key, config);
-
-        HierarchicalRateLimitConfig retrieved = manager.getHierarchicalConfig(key);
-        assertNotNull(retrieved);
-        assertFalse(retrieved.isEmpty());
-        assertEquals(1, retrieved.getLevels().size());
-    }
-
-    @Test
-    void getHierarchicalConfigThrowsWhenNotFound() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("nonexistent").build();
-
-        assertThrows(RateLimitConfigNotFoundException.class, () -> manager.getHierarchicalConfig(key));
-    }
-
-    @Test
-    void getHierarchicalConfigThrowsWhenEmpty() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("user-empty").build();
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-
-        manager.setHierarchicalConfig(key, config);
-
-        assertThrows(RateLimitConfigNotFoundException.class, () -> manager.getHierarchicalConfig(key));
     }
 
     @Test
@@ -79,50 +47,84 @@ class HierarchicalConfigurationManagerTest {
     }
 
     @Test
-    void hierarchicalConfigWithMultipleLevels() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("user1").build();
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
+    void setAndGetHierarchyPolicy() {
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
 
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey userKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
+        manager.setHierarchyPolicy(policy);
 
-        config.addLevel(new TokenBucketConfig(1000, 100, 1, TimeUnit.SECONDS), globalKey);
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), userKey);
-        config.addLevel(new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS), endpointKey);
-
-        manager.setHierarchicalConfig(key, config);
-
-        HierarchicalRateLimitConfig retrieved = manager.getHierarchicalConfig(key);
-        assertEquals(3, retrieved.getLevels().size());
-        assertEquals(1, retrieved.getLevels().get(0).getLevel());
-        assertEquals(2, retrieved.getLevels().get(1).getLevel());
-        assertEquals(3, retrieved.getLevels().get(2).getLevel());
+        HierarchicalRateLimitConfig retrieved = manager.getHierarchyPolicy();
+        assertNotNull(retrieved);
+        assertEquals(2, retrieved.getLevels().size());
     }
 
     @Test
-    void overwritingHierarchicalConfigReplacesExisting() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("user1").build();
+    void hierarchyPolicyIsPersistedInStore() {
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
 
-        HierarchicalRateLimitConfig config1 = new HierarchicalRateLimitConfig();
-        config1.addLevel(
-                new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS),
-                RateLimitKey.builder().setUserId("user1").build()
-        );
-        manager.setHierarchicalConfig(key, config1);
+        manager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config2 = new HierarchicalRateLimitConfig();
-        config2.addLevel(
-                new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS),
-                RateLimitKey.builder().setUserId("user1").build()
-        );
-        config2.addLevel(
-                new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS),
-                RateLimitKey.builder().setDomain("service").build()
-        );
-        manager.setHierarchicalConfig(key, config2);
+        HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(store);
+        HierarchicalRateLimitConfig retrieved = anotherManager.getHierarchyPolicy();
+        assertNotNull(retrieved);
+        assertEquals(1, retrieved.getLevels().size());
+    }
 
-        HierarchicalRateLimitConfig retrieved = manager.getHierarchicalConfig(key);
-        assertEquals(2, retrieved.getLevels().size());
+    @Test
+    void getHierarchyPolicyThrowsWhenNotSet() {
+        assertThrows(RateLimitConfigNotFoundException.class, () -> manager.getHierarchyPolicy());
+    }
+
+    @Test
+    void getHierarchyPolicyThrowsWhenEmpty() {
+        manager.setHierarchyPolicy(new HierarchicalRateLimitConfig());
+        assertThrows(RateLimitConfigNotFoundException.class, () -> manager.getHierarchyPolicy());
+    }
+
+    @Test
+    void resolveConfigReturnsDefaultPolicy() {
+        manager.addDefaultPolicy(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
+
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        assertNotNull(manager.resolveConfig(RateLimitScope.USER, context));
+    }
+
+    @Test
+    void scopedPolicyIsPersistedInStore() {
+        TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
+        manager.addDefaultPolicy(RateLimitScope.USER, defaultConfig);
+
+        HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(store);
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        assertSame(defaultConfig, anotherManager.resolveConfig(RateLimitScope.USER, context));
+    }
+
+    @Test
+    void resolveConfigPrefersOverride() {
+        TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
+        TokenBucketConfig overrideConfig = new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS);
+
+        manager.addDefaultPolicy(RateLimitScope.USER, defaultConfig);
+        manager.addOverridePolicy(RateLimitScope.USER, "user1", overrideConfig);
+
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        assertSame(overrideConfig, manager.resolveConfig(RateLimitScope.USER, context));
+    }
+
+    @Test
+    void resolveConfigFallsBackToDefaultWhenNoOverride() {
+        TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
+        manager.addDefaultPolicy(RateLimitScope.USER, defaultConfig);
+
+        RequestContext context = RequestContext.builder().userId("regular-user").build();
+        assertSame(defaultConfig, manager.resolveConfig(RateLimitScope.USER, context));
+    }
+
+    @Test
+    void resolveConfigReturnsNullWhenNoPolicyExists() {
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        assertNull(manager.resolveConfig(RateLimitScope.USER, context));
     }
 }

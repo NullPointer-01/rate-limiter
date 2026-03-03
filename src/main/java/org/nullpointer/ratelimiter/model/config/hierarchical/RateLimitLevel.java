@@ -1,28 +1,32 @@
 package org.nullpointer.ratelimiter.model.config.hierarchical;
 
-import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 
-public class RateLimitLevel {
-    int level;
-    RateLimitConfig config;
-    RateLimitKey key;
+public class RateLimitLevel implements Comparable<RateLimitLevel> {
+    private final RateLimitScope scope;
+    private final RateLimitConfig defaultConfig;
 
-    public RateLimitLevel(int level, RateLimitConfig config, RateLimitKey key) {
-        this.level = level;
-        this.config = config;
-        this.key = key;
+    public RateLimitLevel(RateLimitScope scope, RateLimitConfig defaultConfig) {
+        if (scope == null) {
+            throw new IllegalArgumentException("Scope cannot be null");
+        }
+        if (defaultConfig == null) {
+            throw new IllegalArgumentException("Default config cannot be null");
+        }
+        this.scope = scope;
+        this.defaultConfig = defaultConfig;
     }
 
-    public int getLevel() {
-        return level;
+    public RateLimitScope getScope() {
+        return scope;
     }
 
-    public RateLimitConfig getConfig() {
-        return config;
+    public RateLimitConfig getDefaultConfig() {
+        return defaultConfig;
     }
 
-    public RateLimitKey getKey() {
-        return key;
+    @Override
+    public int compareTo(RateLimitLevel other) {
+        return Integer.compare(this.scope.getOrder(), other.scope.getOrder());
     }
 }

@@ -4,9 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
+import org.nullpointer.ratelimiter.model.RequestTime;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.state.FixedWindowCounterState;
-import org.nullpointer.ratelimiter.model.RequestTime;
+
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;

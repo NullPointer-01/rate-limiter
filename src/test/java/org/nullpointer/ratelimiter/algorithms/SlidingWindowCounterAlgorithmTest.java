@@ -1,12 +1,12 @@
 package org.nullpointer.ratelimiter.algorithms;
 
 import org.junit.jupiter.api.Test;
+import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestTime;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.state.SlidingWindowCounterState;
-import org.nullpointer.ratelimiter.exceptions.InvalidRateLimitCostException;
 
 import java.util.concurrent.TimeUnit;
 

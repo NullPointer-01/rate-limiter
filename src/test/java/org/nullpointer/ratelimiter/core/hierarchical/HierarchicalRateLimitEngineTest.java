@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
+import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.storage.InMemoryStore;
 
 import java.util.concurrent.TimeUnit;
@@ -29,324 +31,275 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void singleLevelAllowsWithinLimit() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("user1").build();
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS), key);
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        configManager.setHierarchicalConfig(key, config);
-
-        RateLimitResult result = engine.process(key, 1);
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        RateLimitResult result = engine.process(context, 1);
         assertTrue(result.isAllowed());
     }
 
     @Test
     void singleLevelDeniesWhenExhausted() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("user1").build();
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS), key);
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        configManager.setHierarchicalConfig(key, config);
-
-        assertTrue(engine.process(key, 1).isAllowed());
-        assertTrue(engine.process(key, 2).isAllowed());
-        assertFalse(engine.process(key, 1).isAllowed());
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 2).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
     }
 
     @Test
     void multiLevelAllowsWhenAllLevelsPermit() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-        RateLimitKey serviceKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey userKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), serviceKey);
-        config.addLevel(new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS), userKey);
-        config.addLevel(new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS), endpointKey);
-
-        configManager.setHierarchicalConfig(requestKey, config);
-
-        RateLimitResult result = engine.process(requestKey, 1);
+        RequestContext context = RequestContext.builder().userId("user1").apiPath("/api/data").build();
+        RateLimitResult result = engine.process(context, 1);
         assertTrue(result.isAllowed());
     }
 
     @Test
     void multiLevelDeniesWhenMostRestrictiveLevelExhausted() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), globalKey);
-        config.addLevel(new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS), endpointKey);
-
-        configManager.setHierarchicalConfig(requestKey, config);
+        RequestContext context = RequestContext.builder().userId("user1").apiPath("/api/data").build();
 
         // Exhaust endpoint-level limit (capacity = 3)
-        assertTrue(engine.process(requestKey, 1).isAllowed());
-        assertTrue(engine.process(requestKey, 1).isAllowed());
-        assertTrue(engine.process(requestKey, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
         // 4th request denied by endpoint level even though global has capacity
-        assertFalse(engine.process(requestKey, 1).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
     }
 
     @Test
     void multiLevelDeniesWhenGlobalLevelExhausted() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-        RateLimitKey serviceKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        // Global level is the bottleneck (capacity = 2)
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        // Service level is the bottleneck (capacity = 2)
-        config.addLevel(new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS), serviceKey);
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), endpointKey);
-
-        configManager.setHierarchicalConfig(requestKey, config);
-
-        assertTrue(engine.process(requestKey, 1).isAllowed());
-        assertTrue(engine.process(requestKey, 1).isAllowed());
+        RequestContext context = RequestContext.builder().userId("user1").apiPath("/api/data").build();
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
         // 3rd request denied by global level even though endpoint has capacity
-        assertFalse(engine.process(requestKey, 1).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
     }
 
     @Test
     void costIsAppliedToAllLevels() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey userKey = RateLimitKey.builder().setUserId("user1").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS), globalKey);
-        config.addLevel(new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS), userKey);
-
-        configManager.setHierarchicalConfig(requestKey, config);
+        RequestContext context = RequestContext.builder().userId("user1").build();
 
         // Cost of 3 consumes from both levels
-        RateLimitResult r1 = engine.process(requestKey, 3);
+        RateLimitResult r1 = engine.process(context, 3);
         assertTrue(r1.isAllowed());
 
         // Another cost of 3 should fail on user level (5 - 3 = 2 remaining, needs 3)
-        RateLimitResult r2 = engine.process(requestKey, 3);
+        RateLimitResult r2 = engine.process(context, 3);
         assertFalse(r2.isAllowed());
     }
 
     @Test
     void throwsWhenConfigNotFound() {
-        RateLimitKey key = RateLimitKey.builder().setUserId("unknown").build();
-        assertThrows(RateLimitConfigNotFoundException.class, () -> engine.process(key, 1));
+        // No policy set — getHierarchyPolicy() should throw
+        RequestContext context = RequestContext.builder().userId("unknown").build();
+        assertThrows(RateLimitConfigNotFoundException.class, () -> engine.process(context, 1));
     }
 
     @Test
     void stateIsInitializedOnFirstRequest() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey levelKey = RateLimitKey.builder().setUserId("user1").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS), levelKey);
-
-        configManager.setHierarchicalConfig(requestKey, config);
+        // The engine will generate key "user:user1" for USER scope
+        RateLimitKey stateKey = new RateLimitKey("user:user1");
 
         // State should be null before first request
-        assertNull(configManager.getHierarchicalState(levelKey));
+        assertNull(configManager.getState(stateKey));
 
-        engine.process(requestKey, 1);
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        engine.process(context, 1);
 
         // State should now be initialized
-        assertNotNull(configManager.getHierarchicalState(levelKey));
+        assertNotNull(configManager.getState(stateKey));
     }
 
     @Test
     void separateKeysHaveIndependentState() {
-        RateLimitKey user1Key = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey user2Key = RateLimitKey.builder().setUserId("user2").build();
+        // One shared policy; different users get different state keys
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config1 = new HierarchicalRateLimitConfig();
-        config1.addLevel(new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS), user1Key);
-        configManager.setHierarchicalConfig(user1Key, config1);
-
-        HierarchicalRateLimitConfig config2 = new HierarchicalRateLimitConfig();
-        config2.addLevel(new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS), user2Key);
-        configManager.setHierarchicalConfig(user2Key, config2);
+        RequestContext user1 = RequestContext.builder().userId("user1").build();
+        RequestContext user2 = RequestContext.builder().userId("user2").build();
 
         // Exhaust user1
-        assertTrue(engine.process(user1Key, 1).isAllowed());
-        assertTrue(engine.process(user1Key, 1).isAllowed());
-        assertFalse(engine.process(user1Key, 1).isAllowed());
+        assertTrue(engine.process(user1, 1).isAllowed());
+        assertTrue(engine.process(user1, 1).isAllowed());
+        assertFalse(engine.process(user1, 1).isAllowed());
 
         // user2 should still have capacity
-        assertTrue(engine.process(user2Key, 1).isAllowed());
-        assertTrue(engine.process(user2Key, 1).isAllowed());
-        assertFalse(engine.process(user2Key, 1).isAllowed());
+        assertTrue(engine.process(user2, 1).isAllowed());
+        assertTrue(engine.process(user2, 1).isAllowed());
+        assertFalse(engine.process(user2, 1).isAllowed());
     }
 
     @Test
     void sharedLevelStateAcrossDifferentRequests() {
-        // Two users share the same global-level key
-        RateLimitKey serviceKey = RateLimitKey.builder().setDomain("service").build();
+        // Two users share the same global-level key ("global:system")
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        RateLimitKey user1RequestKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey user1LevelKey = RateLimitKey.builder().setUserId("user1").build();
-
-        RateLimitKey user2RequestKey = RateLimitKey.builder().setUserId("user2").build();
-        RateLimitKey user2LevelKey = RateLimitKey.builder().setUserId("user2").build();
-
-        HierarchicalRateLimitConfig config1 = new HierarchicalRateLimitConfig();
-        config1.addLevel(new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS), serviceKey);
-        config1.addLevel(new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS), user1LevelKey);
-        configManager.setHierarchicalConfig(user1RequestKey, config1);
-
-        HierarchicalRateLimitConfig config2 = new HierarchicalRateLimitConfig();
-        config2.addLevel(new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS), serviceKey);
-        config2.addLevel(new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS), user2LevelKey);
-        configManager.setHierarchicalConfig(user2RequestKey, config2);
+        RequestContext user1 = RequestContext.builder().userId("user1").build();
+        RequestContext user2 = RequestContext.builder().userId("user2").build();
 
         // user1 consumes 2 from global
-        assertTrue(engine.process(user1RequestKey, 1).isAllowed());
-        assertTrue(engine.process(user1RequestKey, 1).isAllowed());
+        assertTrue(engine.process(user1, 1).isAllowed());
+        assertTrue(engine.process(user1, 1).isAllowed());
 
         // user2 consumes 1 from global (now at 3/3 used)
-        assertTrue(engine.process(user2RequestKey, 1).isAllowed());
+        assertTrue(engine.process(user2, 1).isAllowed());
 
         // user2's next request denied by shared global limit
-        assertFalse(engine.process(user2RequestKey, 1).isAllowed());
+        assertFalse(engine.process(user2, 1).isAllowed());
     }
 
     @Test
     void multiAlgorithmLevels() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
         // Global level uses TokenBucket
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), globalKey);
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         // Endpoint level uses FixedWindowCounter
-        config.addLevel(new FixedWindowCounterConfig(5, 1, TimeUnit.MINUTES), endpointKey);
+        policy.addPolicy(RateLimitScope.ENDPOINT, new FixedWindowCounterConfig(5, 1, TimeUnit.MINUTES));
+        configManager.setHierarchyPolicy(policy);
 
-        configManager.setHierarchicalConfig(requestKey, config);
+        RequestContext context = RequestContext.builder().userId("user1").apiPath("/api/data").build();
 
         for (int i = 0; i < 5; i++) {
-            assertTrue(engine.process(requestKey, 1).isAllowed(), "Request " + (i + 1) + " should be allowed");
+            assertTrue(engine.process(context, 1).isAllowed(), "Request " + (i + 1) + " should be allowed");
         }
 
         // 6th request should be denied by FixedWindowCounter
-        assertFalse(engine.process(requestKey, 1).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
     }
 
     @Test
     void multiLevelHierarchyEnforcement() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(1000, 100, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey userKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(1000, 100, 1, TimeUnit.SECONDS), globalKey); // Level 1
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), userKey); // Level 2
-        config.addLevel(new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS), endpointKey); // Level 3
-
-        configManager.setHierarchicalConfig(requestKey, config);
+        RequestContext context = RequestContext.builder().userId("user1").apiPath("/api/data").build();
 
         // All 5 allowed — endpoint is the bottleneck
         for (int i = 0; i < 5; i++) {
-            assertTrue(engine.process(requestKey, 1).isAllowed());
+            assertTrue(engine.process(context, 1).isAllowed());
         }
 
         // 6th denied
-        RateLimitResult denied = engine.process(requestKey, 1);
+        RateLimitResult denied = engine.process(context, 1);
         assertFalse(denied.isAllowed());
     }
 
     @Test
     void middleLevelDeniesWhileOthersAllow() {
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").setApi("/api/test").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));   // plenty
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));         // bottleneck
+        policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));  // plenty
+        configManager.setHierarchyPolicy(policy);
 
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey userKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/test").build();
+        RequestContext context = RequestContext.builder().userId("user1").apiPath("/api/test").build();
 
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), globalKey);  // plenty
-        config.addLevel(new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS), userKey);        // bottleneck
-        config.addLevel(new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), endpointKey); // plenty
-
-        configManager.setHierarchicalConfig(requestKey, config);
-
-        assertTrue(engine.process(requestKey, 1).isAllowed());
-        assertTrue(engine.process(requestKey, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
 
         // Denied by middle (user) level
-        assertFalse(engine.process(requestKey, 1).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
     }
 
     @Test
     void noPhantomConsumptionWhenLaterLevelDenies() {
         // Regression test: when a later level denies, earlier levels must NOT lose quota.
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("service").build();
-        RateLimitKey endpointKey = RateLimitKey.builder().setUserId("user1").setApi("/api/data").build();
-
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
         // Global level: capacity 5
-        config.addLevel(new TokenBucketConfig(5, 1, 10, TimeUnit.SECONDS), globalKey);
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(5, 1, 10, TimeUnit.SECONDS));
         // Endpoint level: capacity 2 (bottleneck)
-        config.addLevel(new TokenBucketConfig(2, 1, 10, TimeUnit.SECONDS), endpointKey);
+        policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(2, 1, 10, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        configManager.setHierarchicalConfig(requestKey, config);
+        RequestContext context = RequestContext.builder().userId("user1").apiPath("/api/data").build();
 
         // Consume 2 requests — both levels should allow
-        assertTrue(engine.process(requestKey, 1).isAllowed());
-        assertTrue(engine.process(requestKey, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
 
         // 3rd request denied by endpoint level
-        assertFalse(engine.process(requestKey, 1).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
 
-        // Global level should still have 3 remaining (5 - 2 = 3),
-        RateLimitKey globalOnlyRequestKey = RateLimitKey.builder().setDomain("service").setApi("_check").build();
-        HierarchicalRateLimitConfig globalOnlyConfig = new HierarchicalRateLimitConfig();
-        globalOnlyConfig.addLevel(new TokenBucketConfig(5, 1, 10, TimeUnit.SECONDS), globalKey);
-        configManager.setHierarchicalConfig(globalOnlyRequestKey, globalOnlyConfig);
+        // Global level should still have 3 remaining (5 - 2 = 3).
+        // Swap policy to GLOBAL-only and verify remaining tokens.
+        HierarchicalRateLimitConfig globalOnlyPolicy = new HierarchicalRateLimitConfig();
+        globalOnlyPolicy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(5, 1, 10, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(globalOnlyPolicy);
 
         // Should allow 3 more requests from the global pool
-        assertTrue(engine.process(globalOnlyRequestKey, 1).isAllowed());
-        assertTrue(engine.process(globalOnlyRequestKey, 1).isAllowed());
-        assertTrue(engine.process(globalOnlyRequestKey, 1).isAllowed());
-        assertFalse(engine.process(globalOnlyRequestKey, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertTrue(engine.process(context, 1).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
     }
 
     @Test
     void noPhantomConsumptionOnFirstLevelWhenSecondDenies() {
-        // Two-level hierarchy: first level has 10, second level the bottleneck.
+        // Two-level hierarchy: first level has 10, second level is the bottleneck.
         // Denied requests must not consume from the first level.
-        RateLimitKey requestKey = RateLimitKey.builder().setUserId("user1").build();
-        RateLimitKey globalKey = RateLimitKey.builder().setDomain("global").build();
-        RateLimitKey userKey = RateLimitKey.builder().setUserId("user1").build();
+        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 10, TimeUnit.SECONDS));
+        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(1, 1, 10, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig config = new HierarchicalRateLimitConfig();
-        config.addLevel(new TokenBucketConfig(10, 1, 10, TimeUnit.SECONDS), globalKey);
-        config.addLevel(new TokenBucketConfig(1, 1, 10, TimeUnit.SECONDS), userKey);
-
-        configManager.setHierarchicalConfig(requestKey, config);
-
-        assertTrue(engine.process(requestKey, 1).isAllowed());
+        RequestContext context = RequestContext.builder().userId("user1").build();
+        assertTrue(engine.process(context, 1).isAllowed());
 
         // Next 5 are all denied (user level exhausted)
         for (int i = 0; i < 5; i++) {
-            assertFalse(engine.process(requestKey, 1).isAllowed());
+            assertFalse(engine.process(context, 1).isAllowed());
         }
 
-        // Global level should have consumed only 1 token (not 6)
-        RateLimitKey globalCheckKey = RateLimitKey.builder().setDomain("global").setApi("_check").build();
-        HierarchicalRateLimitConfig globalCheckConfig = new HierarchicalRateLimitConfig();
-        globalCheckConfig.addLevel(new TokenBucketConfig(10, 1, 10, TimeUnit.SECONDS), globalKey);
-        configManager.setHierarchicalConfig(globalCheckKey, globalCheckConfig);
+        // Global level should have consumed only 1 token (not 6).
+        // Swap policy to GLOBAL-only and verify remaining tokens.
+        HierarchicalRateLimitConfig globalOnlyPolicy = new HierarchicalRateLimitConfig();
+        globalOnlyPolicy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 10, TimeUnit.SECONDS));
+        configManager.setHierarchyPolicy(globalOnlyPolicy);
 
         // Should have 9 remaining (10 - 1 = 9)
         for (int i = 0; i < 9; i++) {
-            assertTrue(engine.process(globalCheckKey, 1).isAllowed(),
+            assertTrue(engine.process(context, 1).isAllowed(),
                     "Request " + (i + 1) + " should be allowed, global tokens should not have been phantom-consumed");
         }
-        assertFalse(engine.process(globalCheckKey, 1).isAllowed());
+        assertFalse(engine.process(context, 1).isAllowed());
     }
 }
