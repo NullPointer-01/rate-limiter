@@ -1,6 +1,7 @@
 package org.nullpointer.ratelimiter.core;
 
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
+import org.nullpointer.ratelimiter.instrumentation.RateLimiterMetrics;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestTime;
@@ -12,10 +13,12 @@ import org.nullpointer.ratelimiter.utils.TimeSource;
 public class RateLimitEngine {
     private final ConfigurationManager configurationManager;
     private final TimeSource timeSource;
+    private final RateLimiterMetrics metrics;
 
     public RateLimitEngine(ConfigurationManager configurationManager) {
         this.configurationManager = configurationManager;
         this.timeSource = new SystemTimeSource();
+        this.metrics = new RateLimiterMetrics();
     }
 
     public RateLimitResult process(RateLimitKey key, int cost) {
@@ -29,6 +32,14 @@ public class RateLimitEngine {
         }
 
         RateLimitingAlgorithm algorithm = config.getAlgorithm();
-        return algorithm.tryConsume(key, config, state, time, cost);
+        RateLimitResult result = algorithm.tryConsume(key, config, state, time, cost);
+
+        if (result.isAllowed()) {
+            metrics.logAllowed();
+        } else {
+            metrics.logRejected();
+        }
+
+        return result;
     }
 }

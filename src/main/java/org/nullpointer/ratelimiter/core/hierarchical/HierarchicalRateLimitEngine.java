@@ -1,6 +1,7 @@
 package org.nullpointer.ratelimiter.core.hierarchical;
 
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
+import org.nullpointer.ratelimiter.instrumentation.RateLimiterMetrics;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestContext;
@@ -18,11 +19,13 @@ public class HierarchicalRateLimitEngine {
     private final HierarchicalConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimitKeyGenerator keyGenerator;
+    private final RateLimiterMetrics metrics;
 
     public HierarchicalRateLimitEngine(HierarchicalConfigurationManager configurationManager) {
         this.configurationManager = configurationManager;
         this.timeSource = new SystemTimeSource();
         this.keyGenerator = new RateLimitKeyGenerator();
+        this.metrics = new RateLimiterMetrics();
     }
 
     public RateLimitResult process(RequestContext context, int cost) {
@@ -52,6 +55,7 @@ public class HierarchicalRateLimitEngine {
 
             // If any level denies, return immediately without consuming from previous levels
             if (!result.isAllowed()) {
+                metrics.logRejected();
                 return result;
             }
         }
@@ -69,6 +73,7 @@ public class HierarchicalRateLimitEngine {
             RateLimitingAlgorithm algorithm = config.getAlgorithm();
             lastResult = algorithm.tryConsume(key, config, state, time, cost);
         }
+        metrics.logAllowed();
 
         return lastResult; // Should never be null
     }
