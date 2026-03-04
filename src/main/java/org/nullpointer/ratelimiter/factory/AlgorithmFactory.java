@@ -1,4 +1,4 @@
-package org.nullpointer.ratelimiter.algorithms.factory;
+package org.nullpointer.ratelimiter.factory;
 
 import org.nullpointer.ratelimiter.algorithms.AlgorithmType;
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;

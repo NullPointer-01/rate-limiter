@@ -2,7 +2,7 @@ package org.nullpointer.ratelimiter.model.config;
 
 import org.nullpointer.ratelimiter.algorithms.AlgorithmType;
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
-import org.nullpointer.ratelimiter.algorithms.factory.AlgorithmFactory;
+import org.nullpointer.ratelimiter.factory.AlgorithmFactory;
 import org.nullpointer.ratelimiter.model.state.FixedWindowCounterState;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 
