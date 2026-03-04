@@ -5,12 +5,17 @@ import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerConfig;
 import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerState;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
+import java.util.Arrays;
+
 public class CircuitBreaker {
     private final TimeSource time;
     private final CircuitBreakerConfig config;
 
     private long lastOpenedTimeNanos;
     private CircuitBreakerState state;
+
+    private final boolean[] window;
+    private int idx;
 
     // CLOSED metrics
     private long success;
@@ -29,6 +34,9 @@ public class CircuitBreaker {
         this.success = 0;
         this.errors = 0;
         this.trialCalls = 0;
+
+        this.idx = 0;
+        this.window = new boolean[config.getWindowSize()];
     }
 
     public synchronized boolean allowExecution() {
@@ -67,6 +75,14 @@ public class CircuitBreaker {
             return;
         }
 
+        if (success + errors >= window.length) {
+            if (window[idx]) success--;
+            else errors--;
+        }
+
+        window[idx] = true;
+        idx = (idx + 1) % window.length;
+
         success++;
         evaluateFailureRate(); // Evaluate on success too
     }
@@ -81,6 +97,14 @@ public class CircuitBreaker {
             }
             return;
         }
+
+        if (success + errors >= window.length) {
+            if (window[idx]) success--;
+            else errors--;
+        }
+
+        window[idx] = false;
+        idx = (idx + 1) % window.length;
 
         errors++;
         evaluateFailureRate();
@@ -122,6 +146,8 @@ public class CircuitBreaker {
     private void resetMetrics() {
         success = 0;
         errors = 0;
+        idx = 0;
+        Arrays.fill(window, false);
     }
 
     private double failureRate() {
