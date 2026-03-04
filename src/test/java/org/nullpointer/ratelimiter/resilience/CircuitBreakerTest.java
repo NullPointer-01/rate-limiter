@@ -15,7 +15,15 @@ class CircuitBreakerTest {
     @Test
     void failClosedModeReturnsDeniedFallback() {
         MutableTimeSource time = new MutableTimeSource();
-        CircuitBreakerConfig config = new CircuitBreakerConfig(CircuitBreakerMode.FAIL_CLOSED, 1, 2, TimeUnit.SECONDS, 0.0, 50.0, 20, 1);
+        CircuitBreakerConfig config = CircuitBreakerConfig.builder()
+            .mode(CircuitBreakerMode.FAIL_CLOSED)
+            .windowSize(1)
+            .waitTime(2, TimeUnit.SECONDS)
+            .failureRate(0.0)
+            .trialFailureRate(50.0)
+            .permittedHalfOpenCalls(20)
+            .minimumCalls(1)
+            .build();
         CircuitBreaker breaker = new CircuitBreaker(time, config);
 
         breaker.recordError();
@@ -27,7 +35,15 @@ class CircuitBreakerTest {
     @Test
     void failOpenModeReturnsAllowedFallback() {
         MutableTimeSource time = new MutableTimeSource();
-        CircuitBreakerConfig config = new CircuitBreakerConfig(CircuitBreakerMode.FAIL_OPEN, 1, 2, TimeUnit.SECONDS, 0.0, 50.0, 20, 1);
+        CircuitBreakerConfig config = CircuitBreakerConfig.builder()
+            .mode(CircuitBreakerMode.FAIL_OPEN)
+            .windowSize(1)
+            .waitTime(2, TimeUnit.SECONDS)
+            .failureRate(0.0)
+            .trialFailureRate(50.0)
+            .permittedHalfOpenCalls(20)
+            .minimumCalls(1)
+            .build();
         CircuitBreaker breaker = new CircuitBreaker(time, config);
 
         breaker.recordError();
@@ -39,7 +55,15 @@ class CircuitBreakerTest {
     @Test
     void openTransitionsToHalfOpenAfterWaitAndClosesOnSuccess() {
         MutableTimeSource time = new MutableTimeSource();
-        CircuitBreakerConfig config = new CircuitBreakerConfig(CircuitBreakerMode.FAIL_CLOSED, 1, 2, TimeUnit.SECONDS, 0.0, 10, 5, 1);
+        CircuitBreakerConfig config = CircuitBreakerConfig.builder()
+            .mode(CircuitBreakerMode.FAIL_CLOSED)
+            .windowSize(1)
+            .waitTime(2, TimeUnit.SECONDS)
+            .failureRate(0.0)
+            .trialFailureRate(10)
+            .permittedHalfOpenCalls(5)
+            .minimumCalls(1)
+            .build();
         CircuitBreaker breaker = new CircuitBreaker(time, config);
 
         breaker.recordError();

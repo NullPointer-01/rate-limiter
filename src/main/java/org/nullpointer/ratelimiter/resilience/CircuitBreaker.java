@@ -110,6 +110,18 @@ public class CircuitBreaker {
         evaluateFailureRate();
     }
 
+    public synchronized boolean isOpen() {
+        return CircuitBreakerState.OPEN.equals(state);
+    }
+
+    public synchronized boolean isClosed() {
+        return CircuitBreakerState.CLOSED.equals(state);
+    }
+
+    public synchronized boolean isHalfOpen() {
+        return CircuitBreakerState.HALF_OPEN.equals(state);
+    }
+
     private void evaluateFailureRate() {
         long total = success + errors;
         if (total >= config.getMinimumCalls() && failureRate() >= config.getFailureRate()) {
