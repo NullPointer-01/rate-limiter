@@ -1,12 +1,15 @@
 package org.nullpointer.ratelimiter.core;
 
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
+import org.nullpointer.ratelimiter.factory.CircuitBreakerFactory;
 import org.nullpointer.ratelimiter.instrumentation.RateLimiterMetrics;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestTime;
+import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
+import org.nullpointer.ratelimiter.resilience.CircuitBreaker;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
@@ -14,32 +17,55 @@ public class RateLimitEngine {
     private final ConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimiterMetrics metrics;
+    private final CircuitBreaker cb;
 
     public RateLimitEngine(ConfigurationManager configurationManager) {
+        this(configurationManager, CircuitBreakerFactory.defaultCircuitBreakerConfig());
+    }
+
+    public RateLimitEngine(ConfigurationManager configurationManager, CircuitBreakerConfig cbConfig) {
         this.configurationManager = configurationManager;
         this.timeSource = new SystemTimeSource();
         this.metrics = new RateLimiterMetrics();
+        this.cb = new CircuitBreaker(timeSource, cbConfig);
     }
 
     public RateLimitResult process(RateLimitKey key, int cost) {
-        RateLimitConfig config = this.configurationManager.getConfig(key);
-        RequestTime time = timeSource.capture();
-
-        RateLimitState state = this.configurationManager.getState(key);
-        if (state == null) {
-            state = config.initialRateLimitState(time.nanoTime());
-            this.configurationManager.setState(key, state);
+        if (!cb.allowExecution()) {
+            RateLimitResult fallbackResult = cb.getFallbackResult();
+            if (fallbackResult.isAllowed()) {
+                metrics.logAllowed();
+            } else {
+                metrics.logRejected();
+            }
+            return fallbackResult;
         }
 
-        RateLimitingAlgorithm algorithm = config.getAlgorithm();
-        RateLimitResult result = algorithm.tryConsume(key, config, state, time, cost);
+        try {
+            RateLimitConfig config = this.configurationManager.getConfig(key);
+            RequestTime time = timeSource.capture();
 
-        if (result.isAllowed()) {
-            metrics.logAllowed();
-        } else {
-            metrics.logRejected();
+            RateLimitState state = this.configurationManager.getState(key);
+            if (state == null) {
+                state = config.initialRateLimitState(time.nanoTime());
+                this.configurationManager.setState(key, state);
+            }
+
+            RateLimitingAlgorithm algorithm = config.getAlgorithm();
+            RateLimitResult result = algorithm.tryConsume(key, config, state, time, cost);
+
+            if (result.isAllowed()) {
+                metrics.logAllowed();
+            } else {
+                metrics.logRejected();
+            }
+
+            cb.recordSuccess();
+            return result;
+        } catch (Exception ex) {
+            metrics.logError();
+            cb.recordError();
+            return cb.getFallbackResult();
         }
-
-        return result;
     }
 }

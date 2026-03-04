@@ -6,11 +6,13 @@ public class RateLimiterMetrics {
     private final AtomicLong total;
     private final AtomicLong allowed;
     private final AtomicLong rejected;
+    private final AtomicLong error;
 
     public RateLimiterMetrics() {
         total = new AtomicLong(0);
         allowed = new AtomicLong(0);
         rejected = new AtomicLong(0);
+        error = new AtomicLong(0);
     }
 
     public void logAllowed() {
@@ -23,7 +25,16 @@ public class RateLimiterMetrics {
         total.incrementAndGet();
     }
 
+    public void logError() {
+        error.incrementAndGet();
+        total.incrementAndGet();
+    }
+
     public double getRejectionRate() {
         return (double) 100 * rejected.get() / total.get();
+    }
+
+    public double getErrorRate() {
+        return (double) 100 * error.get() / total.get();
     }
 }
