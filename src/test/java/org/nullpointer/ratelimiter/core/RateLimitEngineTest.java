@@ -4,10 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
-import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import java.util.concurrent.TimeUnit;
 
@@ -18,8 +18,8 @@ class RateLimitEngineTest {
 
     @Test
     void engineUsesConfigAndStateToEnforceLimits() {
-        ConfigStore configStore = new InMemoryConfigStore();
-        StateStore stateStore = new InMemoryStateStore();
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
         ConfigurationManager manager = new ConfigurationManager(configStore, stateStore);
         RateLimitEngine engine = new RateLimitEngine(manager);
 

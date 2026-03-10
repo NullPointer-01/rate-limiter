@@ -2,22 +2,22 @@ package org.nullpointer.ratelimiter.storage.config;
 
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
-import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class InMemoryConfigStore implements ConfigStore {
+public class InMemoryConfigRepository implements ConfigRepository {
 	private final Map<String, RateLimitConfig> configMap;
-	private final Map<String, RateLimitConfig> scopedPolicyMap;
+	private final Map<String, RateLimitConfig> scopedConfigMap;
 
 	private RateLimitConfig defaultConfig;
-	private HierarchicalRateLimitConfig hierarchyPolicy;
+	private HierarchicalRateLimitPolicy hierarchyPolicy;
 
-	public InMemoryConfigStore() {
+	public InMemoryConfigRepository() {
 		this.configMap = new ConcurrentHashMap<>();
-		this.scopedPolicyMap = new ConcurrentHashMap<>();
+		this.scopedConfigMap = new ConcurrentHashMap<>();
 	}
 
 	@Override
@@ -46,26 +46,26 @@ public class InMemoryConfigStore implements ConfigStore {
 	}
 
 	@Override
-	public void setHierarchyPolicy(HierarchicalRateLimitConfig policy) {
+	public void setHierarchyPolicy(HierarchicalRateLimitPolicy policy) {
 		this.hierarchyPolicy = policy;
 	}
 
 	@Override
-	public HierarchicalRateLimitConfig getHierarchyPolicy() {
+	public HierarchicalRateLimitPolicy getHierarchyPolicy() {
 		return this.hierarchyPolicy;
 	}
 
 	@Override
-	public void setScopedPolicy(RateLimitScope scope, String identifier, RateLimitConfig config) {
-		this.scopedPolicyMap.put(toPolicyKey(scope, identifier), config);
+	public void setScopedConfig(RateLimitScope scope, String identifier, RateLimitConfig config) {
+		this.scopedConfigMap.put(toScopedConfigKey(scope, identifier), config);
 	}
 
 	@Override
-	public RateLimitConfig getScopedPolicy(RateLimitScope scope, String identifier) {
-		return this.scopedPolicyMap.get(toPolicyKey(scope, identifier));
+	public RateLimitConfig getScopedConfig(RateLimitScope scope, String identifier) {
+		return this.scopedConfigMap.get(toScopedConfigKey(scope, identifier));
 	}
 
-	private String toPolicyKey(RateLimitScope scope, String identifier) {
+	private String toScopedConfigKey(RateLimitScope scope, String identifier) {
 		return scope.getPrefix() + ":" + identifier;
 	}
 }

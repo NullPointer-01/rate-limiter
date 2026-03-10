@@ -4,10 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
-import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import java.util.concurrent.TimeUnit;
 
@@ -18,8 +18,8 @@ class ConfigurationManagerTest {
 
     @Test
     void returnsSpecificOrDefaultConfig() {
-        ConfigStore configStore = new InMemoryConfigStore();
-        StateStore stateStore = new InMemoryStateStore();
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
         ConfigurationManager manager = new ConfigurationManager(configStore, stateStore);
 
         TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
@@ -34,8 +34,8 @@ class ConfigurationManagerTest {
 
     @Test
     void throwsWhenNoConfigAtAll() {
-        ConfigStore configStore = new InMemoryConfigStore();
-        StateStore stateStore = new InMemoryStateStore();
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
         ConfigurationManager manager = new ConfigurationManager(configStore, stateStore);
         RateLimitKey key = RateLimitKey.builder().setUserId("user-missing").build();
         assertThrows(RateLimitConfigNotFoundException.class, () -> manager.getConfig(key));

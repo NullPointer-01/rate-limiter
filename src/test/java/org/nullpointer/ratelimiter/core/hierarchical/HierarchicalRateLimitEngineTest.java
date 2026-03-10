@@ -8,12 +8,12 @@ import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
-import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import java.util.concurrent.TimeUnit;
 
@@ -21,22 +21,22 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HierarchicalRateLimitEngineTest {
 
-    private ConfigStore configStore;
-    private StateStore stateStore;
+    private ConfigRepository configStore;
+    private StateRepository stateStore;
     private HierarchicalConfigurationManager configManager;
     private HierarchicalRateLimitEngine engine;
 
     @BeforeEach
     void setUp() {
-        configStore = new InMemoryConfigStore();
-        stateStore = new InMemoryStateStore();
+        configStore = new InMemoryConfigRepository();
+        stateStore = new InMemoryStateRepository();
         configManager = new HierarchicalConfigurationManager(configStore, stateStore);
         engine = new HierarchicalRateLimitEngine(configManager);
     }
 
     @Test
     void singleLevelAllowsWithinLimit() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
 
@@ -47,7 +47,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void singleLevelDeniesWhenExhausted() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
 
@@ -59,7 +59,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void multiLevelAllowsWhenAllLevelsPermit() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
@@ -72,7 +72,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void multiLevelDeniesWhenMostRestrictiveLevelExhausted() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
@@ -89,7 +89,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void multiLevelDeniesWhenGlobalLevelExhausted() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         // Global level is the bottleneck (capacity = 2)
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
@@ -104,7 +104,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void costIsAppliedToAllLevels() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
@@ -129,7 +129,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void stateIsInitializedOnFirstRequest() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
 
@@ -149,7 +149,7 @@ class HierarchicalRateLimitEngineTest {
     @Test
     void separateKeysHaveIndependentState() {
         // One shared policy; different users get different state keys
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
 
@@ -170,7 +170,7 @@ class HierarchicalRateLimitEngineTest {
     @Test
     void sharedLevelStateAcrossDifferentRequests() {
         // Two users share the same global-level key ("global:system")
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
@@ -191,7 +191,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void multiAlgorithmLevels() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         // Global level uses TokenBucket
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         // Endpoint level uses FixedWindowCounter
@@ -210,7 +210,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void multiLevelHierarchyEnforcement() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(1000, 100, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
@@ -230,7 +230,7 @@ class HierarchicalRateLimitEngineTest {
 
     @Test
     void middleLevelDeniesWhileOthersAllow() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));   // plenty
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));         // bottleneck
         policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));  // plenty
@@ -248,7 +248,7 @@ class HierarchicalRateLimitEngineTest {
     @Test
     void noPhantomConsumptionWhenLaterLevelDenies() {
         // Regression test: when a later level denies, earlier levels must NOT lose quota.
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         // Global level: capacity 5
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(5, 1, 10, TimeUnit.SECONDS));
         // Endpoint level: capacity 2 (bottleneck)
@@ -266,7 +266,7 @@ class HierarchicalRateLimitEngineTest {
 
         // Global level should still have 3 remaining (5 - 2 = 3).
         // Swap policy to GLOBAL-only and verify remaining tokens.
-        HierarchicalRateLimitConfig globalOnlyPolicy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy globalOnlyPolicy = new HierarchicalRateLimitPolicy();
         globalOnlyPolicy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(5, 1, 10, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(globalOnlyPolicy);
 
@@ -281,7 +281,7 @@ class HierarchicalRateLimitEngineTest {
     void noPhantomConsumptionOnFirstLevelWhenSecondDenies() {
         // Two-level hierarchy: first level has 10, second level is the bottleneck.
         // Denied requests must not consume from the first level.
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 10, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(1, 1, 10, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
@@ -296,7 +296,7 @@ class HierarchicalRateLimitEngineTest {
 
         // Global level should have consumed only 1 token (not 6).
         // Swap policy to GLOBAL-only and verify remaining tokens.
-        HierarchicalRateLimitConfig globalOnlyPolicy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy globalOnlyPolicy = new HierarchicalRateLimitPolicy();
         globalOnlyPolicy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 10, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(globalOnlyPolicy);
 

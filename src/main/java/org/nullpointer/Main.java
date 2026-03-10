@@ -7,10 +7,10 @@ import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
-import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import java.util.concurrent.TimeUnit;
 
@@ -18,13 +18,13 @@ public class Main {
     public static void main(String[] args) {
         demoDefaultConfig();
         demoTokenBucketRateLimiter();
-        demoteLimiter();
+        demoSlidingWindowRateLimiter();
         demoFixedWindowCounterRateLimiter();
     }
 
     private static void demoFixedWindowCounterRateLimiter() {
-        ConfigStore configStore = new InMemoryConfigStore();
-        StateStore stateStore = new InMemoryStateStore();
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
         ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         FixedWindowCounterConfig config = new FixedWindowCounterConfig(10, 10, TimeUnit.SECONDS);
@@ -53,9 +53,9 @@ public class Main {
         }
     }
 
-    private static void demoteLimiter() {
-        ConfigStore configStore = new InMemoryConfigStore();
-        StateStore stateStore = new InMemoryStateStore();
+    private static void demoSlidingWindowRateLimiter() {
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
         ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         SlidingWindowConfig config = new SlidingWindowConfig(2, 5, TimeUnit.SECONDS);
@@ -85,8 +85,8 @@ public class Main {
     }
 
     private static void demoTokenBucketRateLimiter() {
-        ConfigStore configStore = new InMemoryConfigStore();
-        StateStore stateStore = new InMemoryStateStore();
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
         ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         TokenBucketConfig config = new TokenBucketConfig(100, 10, 5, TimeUnit.SECONDS);
@@ -100,8 +100,8 @@ public class Main {
     }
 
     private static void demoDefaultConfig() {
-        ConfigStore configStore = new InMemoryConfigStore();
-        StateStore stateStore = new InMemoryStateStore();
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
         ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         TokenBucketConfig defaultConfig = new TokenBucketConfig(100, 10, 5, TimeUnit.SECONDS);

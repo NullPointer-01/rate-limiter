@@ -6,12 +6,12 @@ import org.nullpointer.ratelimiter.core.hierarchical.HierarchicalConfigurationMa
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
-import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import java.util.concurrent.TimeUnit;
 
@@ -20,22 +20,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HierarchicalRateLimiterTest {
 
-    private ConfigStore configStore;
-    private StateStore stateStore;
+    private ConfigRepository configStore;
+    private StateRepository stateStore;
     private HierarchicalConfigurationManager configManager;
     private HierarchicalRateLimiter rateLimiter;
 
     @BeforeEach
     void setUp() {
-        configStore = new InMemoryConfigStore();
-        stateStore = new InMemoryStateStore();
+        configStore = new InMemoryConfigRepository();
+        stateStore = new InMemoryStateRepository();
         configManager = new HierarchicalConfigurationManager(configStore, stateStore);
         rateLimiter = new HierarchicalRateLimiter(configManager);
     }
 
     @Test
     void processWithCostDelegatesToEngine() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
 
@@ -50,7 +50,7 @@ class HierarchicalRateLimiterTest {
 
     @Test
     void processMultiLevelHierarchyRateLimit() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
@@ -69,7 +69,7 @@ class HierarchicalRateLimiterTest {
 
     @Test
     void deniedResultContainsRetryInfo() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(1, 1, 1, TimeUnit.SECONDS));
         configManager.setHierarchyPolicy(policy);
 

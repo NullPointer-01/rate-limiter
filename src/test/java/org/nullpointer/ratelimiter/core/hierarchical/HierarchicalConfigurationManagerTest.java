@@ -6,14 +6,14 @@ import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.TokenBucketState;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
-import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import java.util.concurrent.TimeUnit;
 
@@ -21,14 +21,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HierarchicalConfigurationManagerTest {
 
-    private ConfigStore configStore;
-    private StateStore stateStore;
+    private ConfigRepository configStore;
+    private StateRepository stateStore;
     private HierarchicalConfigurationManager manager;
 
     @BeforeEach
     void setUp() {
-        configStore = new InMemoryConfigStore();
-        stateStore = new InMemoryStateStore();
+        configStore = new InMemoryConfigRepository();
+        stateStore = new InMemoryStateRepository();
         manager = new HierarchicalConfigurationManager(configStore, stateStore);
     }
 
@@ -53,26 +53,26 @@ class HierarchicalConfigurationManagerTest {
 
     @Test
     void setAndGetHierarchyPolicy() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
 
         manager.setHierarchyPolicy(policy);
 
-        HierarchicalRateLimitConfig retrieved = manager.getHierarchyPolicy();
+        HierarchicalRateLimitPolicy retrieved = manager.getHierarchyPolicy();
         assertNotNull(retrieved);
         assertEquals(2, retrieved.getLevels().size());
     }
 
     @Test
     void hierarchyPolicyIsPersistedInStore() {
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
 
         manager.setHierarchyPolicy(policy);
 
         HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(configStore, stateStore);
-        HierarchicalRateLimitConfig retrieved = anotherManager.getHierarchyPolicy();
+        HierarchicalRateLimitPolicy retrieved = anotherManager.getHierarchyPolicy();
         assertNotNull(retrieved);
         assertEquals(1, retrieved.getLevels().size());
     }
@@ -84,52 +84,52 @@ class HierarchicalConfigurationManagerTest {
 
     @Test
     void getHierarchyPolicyThrowsWhenEmpty() {
-        manager.setHierarchyPolicy(new HierarchicalRateLimitConfig());
+        manager.setHierarchyPolicy(new HierarchicalRateLimitPolicy());
         assertThrows(RateLimitConfigNotFoundException.class, () -> manager.getHierarchyPolicy());
     }
 
     @Test
-    void resolveConfigReturnsDefaultPolicy() {
-        manager.addDefaultPolicy(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
+    void resolveScopedConfigReturnsDefaultPolicy() {
+        manager.setDefaultScopedConfig(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
 
         RequestContext context = RequestContext.builder().userId("user1").build();
-        assertNotNull(manager.resolveConfig(RateLimitScope.USER, context));
+        assertNotNull(manager.resolveScopedConfig(RateLimitScope.USER, context));
     }
 
     @Test
-    void scopedPolicyIsPersistedInStore() {
+    void scopedConfigIsPersistedInStore() {
         TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
-        manager.addDefaultPolicy(RateLimitScope.USER, defaultConfig);
+        manager.setDefaultScopedConfig(RateLimitScope.USER, defaultConfig);
 
         HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(configStore, stateStore);
         RequestContext context = RequestContext.builder().userId("user1").build();
-        assertSame(defaultConfig, anotherManager.resolveConfig(RateLimitScope.USER, context));
+        assertSame(defaultConfig, anotherManager.resolveScopedConfig(RateLimitScope.USER, context));
     }
 
     @Test
-    void resolveConfigPrefersOverride() {
+    void resolveScopedConfigPrefersOverride() {
         TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         TokenBucketConfig overrideConfig = new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS);
 
-        manager.addDefaultPolicy(RateLimitScope.USER, defaultConfig);
-        manager.addOverridePolicy(RateLimitScope.USER, "user1", overrideConfig);
+        manager.setDefaultScopedConfig(RateLimitScope.USER, defaultConfig);
+        manager.setOverrideScopedConfig(RateLimitScope.USER, "user1", overrideConfig);
 
         RequestContext context = RequestContext.builder().userId("user1").build();
-        assertSame(overrideConfig, manager.resolveConfig(RateLimitScope.USER, context));
+        assertSame(overrideConfig, manager.resolveScopedConfig(RateLimitScope.USER, context));
     }
 
     @Test
-    void resolveConfigFallsBackToDefaultWhenNoOverride() {
+    void resolveScopedConfigFallsBackToDefaultWhenNoOverride() {
         TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
-        manager.addDefaultPolicy(RateLimitScope.USER, defaultConfig);
+        manager.setDefaultScopedConfig(RateLimitScope.USER, defaultConfig);
 
         RequestContext context = RequestContext.builder().userId("regular-user").build();
-        assertSame(defaultConfig, manager.resolveConfig(RateLimitScope.USER, context));
+        assertSame(defaultConfig, manager.resolveScopedConfig(RateLimitScope.USER, context));
     }
 
     @Test
-    void resolveConfigReturnsNullWhenNoPolicyExists() {
+    void resolveScopedConfigReturnsNullWhenNoPolicyExists() {
         RequestContext context = RequestContext.builder().userId("user1").build();
-        assertNull(manager.resolveConfig(RateLimitScope.USER, context));
+        assertNull(manager.resolveScopedConfig(RateLimitScope.USER, context));
     }
 }

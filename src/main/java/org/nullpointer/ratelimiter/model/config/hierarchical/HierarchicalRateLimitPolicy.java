@@ -6,10 +6,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class HierarchicalRateLimitConfig {
+public class HierarchicalRateLimitPolicy {
     private final List<RateLimitLevel> levels;
 
-    public HierarchicalRateLimitConfig() {
+    public HierarchicalRateLimitPolicy() {
         this.levels = new ArrayList<>();
     }
 

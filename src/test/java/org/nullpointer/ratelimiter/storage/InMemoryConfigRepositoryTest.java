@@ -3,20 +3,20 @@ package org.nullpointer.ratelimiter.storage;
 import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
 
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-class InMemoryConfigStoreTest {
+class InMemoryConfigRepositoryTest {
 
     @Test
     void storesAndRetrievesDefaultAndSpecificConfig() {
-        ConfigStore store = new InMemoryConfigStore();
+        ConfigRepository store = new InMemoryConfigRepository();
         TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         store.setDefaultConfig(defaultConfig);
 
@@ -31,19 +31,19 @@ class InMemoryConfigStoreTest {
 
     @Test
     void storesAndRetrievesHierarchyPolicyAndScopedPolicies() {
-        ConfigStore store = new InMemoryConfigStore();
+        ConfigRepository store = new InMemoryConfigRepository();
 
-        HierarchicalRateLimitConfig policy = new HierarchicalRateLimitConfig();
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
         store.setHierarchyPolicy(policy);
 
         TokenBucketConfig defaultUserConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         TokenBucketConfig overrideUserConfig = new TokenBucketConfig(25, 5, 1, TimeUnit.SECONDS);
-        store.setScopedPolicy(RateLimitScope.USER, "DEFAULT", defaultUserConfig);
-        store.setScopedPolicy(RateLimitScope.USER, "user-1", overrideUserConfig);
+        store.setScopedConfig(RateLimitScope.USER, "DEFAULT", defaultUserConfig);
+        store.setScopedConfig(RateLimitScope.USER, "user-1", overrideUserConfig);
 
         assertSame(policy, store.getHierarchyPolicy());
-        assertSame(defaultUserConfig, store.getScopedPolicy(RateLimitScope.USER, "DEFAULT"));
-        assertSame(overrideUserConfig, store.getScopedPolicy(RateLimitScope.USER, "user-1"));
+        assertSame(defaultUserConfig, store.getScopedConfig(RateLimitScope.USER, "DEFAULT"));
+        assertSame(overrideUserConfig, store.getScopedConfig(RateLimitScope.USER, "user-1"));
     }
 }

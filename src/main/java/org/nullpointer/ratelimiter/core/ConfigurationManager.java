@@ -4,32 +4,32 @@ import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
-import org.nullpointer.ratelimiter.storage.config.ConfigStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 public class ConfigurationManager {
-    protected final ConfigStore configStore;
-    protected final StateStore stateStore;
+    protected final ConfigRepository configRepository;
+    protected final StateRepository stateRepository;
 
-    public ConfigurationManager(ConfigStore configStore, StateStore stateStore) {
-        this.configStore = configStore;
-        this.stateStore = stateStore;
+    public ConfigurationManager(ConfigRepository configRepository, StateRepository stateRepository) {
+        this.configRepository = configRepository;
+        this.stateRepository = stateRepository;
     }
 
     public void setConfig(RateLimitKey key, RateLimitConfig config) {
-        this.configStore.setConfig(key, config);
+        this.configRepository.setConfig(key, config);
     }
 
     public void setDefaultConfig(RateLimitConfig config) {
-        this.configStore.setDefaultConfig(config);
+        this.configRepository.setDefaultConfig(config);
     }
 
     public RateLimitConfig getDefaultConfig() {
-        return this.configStore.getDefaultConfig();
+        return this.configRepository.getDefaultConfig();
     }
 
     public RateLimitConfig getConfig(RateLimitKey key) {
-        RateLimitConfig config = this.configStore.getOrDefaultConfig(key);
+        RateLimitConfig config = this.configRepository.getOrDefaultConfig(key);
         if (config == null) {
             throw new RateLimitConfigNotFoundException("No rate limit configuration for the key, " + key.toKey());
         }
@@ -38,10 +38,10 @@ public class ConfigurationManager {
     }
 
     public void setState(RateLimitKey key, RateLimitState state) {
-        this.stateStore.setState(key, state);
+        this.stateRepository.setState(key, state);
     }
 
     public RateLimitState getState(RateLimitKey key) {
-        return this.stateStore.getState(key);
+        return this.stateRepository.getState(key);
     }
 }

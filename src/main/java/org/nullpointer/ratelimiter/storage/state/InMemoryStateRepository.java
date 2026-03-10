@@ -6,11 +6,11 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class InMemoryStateStore implements StateStore {
+public class InMemoryStateRepository implements StateRepository {
     private final Map<String, RateLimitState> stateMap;
     private final Map<String, RateLimitState> hierarchicalStateMap;
 
-    public InMemoryStateStore() {
+    public InMemoryStateRepository() {
         this.stateMap = new ConcurrentHashMap<>();
         this.hierarchicalStateMap = new ConcurrentHashMap<>();
     }

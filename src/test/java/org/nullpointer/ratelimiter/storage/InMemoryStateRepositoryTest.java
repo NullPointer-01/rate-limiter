@@ -3,16 +3,16 @@ package org.nullpointer.ratelimiter.storage;
 import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.state.TokenBucketState;
-import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
-import org.nullpointer.ratelimiter.storage.state.StateStore;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-class InMemoryStateStoreTest {
+class InMemoryStateRepositoryTest {
 
     @Test
     void storesAndRetrievesRegularState() {
-        StateStore store = new InMemoryStateStore();
+        StateRepository store = new InMemoryStateRepository();
         RateLimitKey key = RateLimitKey.builder().setUserId("user").build();
 
         store.setState(key, new TokenBucketState(5, System.nanoTime()));
@@ -22,7 +22,7 @@ class InMemoryStateStoreTest {
 
     @Test
     void storesAndRetrievesHierarchicalState() {
-        StateStore store = new InMemoryStateStore();
+        StateRepository store = new InMemoryStateRepository();
         RateLimitKey key = RateLimitKey.builder().setUserId("user").build();
 
         store.setHierarchicalState(key, new TokenBucketState(5, System.nanoTime()));

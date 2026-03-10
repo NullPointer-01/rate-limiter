@@ -2,10 +2,10 @@ package org.nullpointer.ratelimiter.storage.config;
 
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
-import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 
-public interface ConfigStore {
+public interface ConfigRepository {
     void setDefaultConfig(RateLimitConfig config);
 
     RateLimitConfig getDefaultConfig();
@@ -16,11 +16,11 @@ public interface ConfigStore {
 
     RateLimitConfig getOrDefaultConfig(RateLimitKey key);
 
-    void setHierarchyPolicy(HierarchicalRateLimitConfig policy);
+    void setHierarchyPolicy(HierarchicalRateLimitPolicy policy);
 
-    HierarchicalRateLimitConfig getHierarchyPolicy();
+    HierarchicalRateLimitPolicy getHierarchyPolicy();
 
-    void setScopedPolicy(RateLimitScope scope, String identifier, RateLimitConfig config);
+    void setScopedConfig(RateLimitScope scope, String identifier, RateLimitConfig config);
 
-    RateLimitConfig getScopedPolicy(RateLimitScope scope, String identifier);
+    RateLimitConfig getScopedConfig(RateLimitScope scope, String identifier);
 }
