@@ -11,8 +11,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static org.nullpointer.ratelimiter.alerting.AlertConstants.MONITOR_INTERVAL_IN_SECONDS;
-import static org.nullpointer.ratelimiter.alerting.AlertConstants.THRESHOLD_REJECTION_RATE;
+import static org.nullpointer.ratelimiter.model.alert.AlertConstants.MONITOR_INTERVAL_IN_SECONDS;
+import static org.nullpointer.ratelimiter.model.alert.AlertConstants.THRESHOLD_REJECTION_RATE;
 
 public class AlertingService {
     private static final Logger logger = Logger.getLogger(AlertingService.class.getName());

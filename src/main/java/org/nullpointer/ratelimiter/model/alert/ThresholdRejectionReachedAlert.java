@@ -1,7 +1,5 @@
 package org.nullpointer.ratelimiter.model.alert;
 
-import org.nullpointer.ratelimiter.alerting.AlertType;
-
 public class ThresholdRejectionReachedAlert implements Alert {
     private final double rejectionRate;
 

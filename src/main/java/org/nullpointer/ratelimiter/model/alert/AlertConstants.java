@@ -1,4 +1,4 @@
-package org.nullpointer.ratelimiter.alerting;
+package org.nullpointer.ratelimiter.model.alert;
 
 public class AlertConstants {
     public static final int MONITOR_INTERVAL_IN_SECONDS = 60;
