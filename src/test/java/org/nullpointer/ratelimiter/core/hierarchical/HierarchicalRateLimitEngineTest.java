@@ -10,7 +10,10 @@ import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
-import org.nullpointer.ratelimiter.storage.InMemoryStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigStore;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
+import org.nullpointer.ratelimiter.storage.state.StateStore;
 
 import java.util.concurrent.TimeUnit;
 
@@ -18,14 +21,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HierarchicalRateLimitEngineTest {
 
-    private InMemoryStore store;
+    private ConfigStore configStore;
+    private StateStore stateStore;
     private HierarchicalConfigurationManager configManager;
     private HierarchicalRateLimitEngine engine;
 
     @BeforeEach
     void setUp() {
-        store = new InMemoryStore();
-        configManager = new HierarchicalConfigurationManager(store);
+        configStore = new InMemoryConfigStore();
+        stateStore = new InMemoryStateStore();
+        configManager = new HierarchicalConfigurationManager(configStore, stateStore);
         engine = new HierarchicalRateLimitEngine(configManager);
     }
 
@@ -132,13 +137,13 @@ class HierarchicalRateLimitEngineTest {
         RateLimitKey stateKey = new RateLimitKey("user:user1");
 
         // State should be null before first request
-        assertNull(configManager.getState(stateKey));
+        assertNull(configManager.getHierarchicalState(stateKey));
 
         RequestContext context = RequestContext.builder().userId("user1").build();
         engine.process(context, 1);
 
         // State should now be initialized
-        assertNotNull(configManager.getState(stateKey));
+        assertNotNull(configManager.getHierarchicalState(stateKey));
     }
 
     @Test

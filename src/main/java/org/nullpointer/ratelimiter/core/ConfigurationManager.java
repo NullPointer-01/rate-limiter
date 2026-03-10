@@ -4,29 +4,32 @@ import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
-import org.nullpointer.ratelimiter.storage.Store;
+import org.nullpointer.ratelimiter.storage.config.ConfigStore;
+import org.nullpointer.ratelimiter.storage.state.StateStore;
 
 public class ConfigurationManager {
-    protected final Store store;
+    protected final ConfigStore configStore;
+    protected final StateStore stateStore;
 
-    public ConfigurationManager(Store store) {
-        this.store = store;
+    public ConfigurationManager(ConfigStore configStore, StateStore stateStore) {
+        this.configStore = configStore;
+        this.stateStore = stateStore;
     }
 
     public void setConfig(RateLimitKey key, RateLimitConfig config) {
-        this.store.setConfig(key, config);
+        this.configStore.setConfig(key, config);
     }
 
     public void setDefaultConfig(RateLimitConfig config) {
-        this.store.setDefaultConfig(config);
+        this.configStore.setDefaultConfig(config);
     }
 
     public RateLimitConfig getDefaultConfig() {
-        return this.store.getDefaultConfig();
+        return this.configStore.getDefaultConfig();
     }
 
     public RateLimitConfig getConfig(RateLimitKey key) {
-        RateLimitConfig config = this.store.getOrDefaultConfig(key);
+        RateLimitConfig config = this.configStore.getOrDefaultConfig(key);
         if (config == null) {
             throw new RateLimitConfigNotFoundException("No rate limit configuration for the key, " + key.toKey());
         }
@@ -35,10 +38,10 @@ public class ConfigurationManager {
     }
 
     public void setState(RateLimitKey key, RateLimitState state) {
-        this.store.setState(key, state);
+        this.stateStore.setState(key, state);
     }
 
     public RateLimitState getState(RateLimitKey key) {
-        return this.store.getState(key);
+        return this.stateStore.getState(key);
     }
 }

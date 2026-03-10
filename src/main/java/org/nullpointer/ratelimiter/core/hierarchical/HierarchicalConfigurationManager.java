@@ -8,21 +8,22 @@ import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
-import org.nullpointer.ratelimiter.storage.Store;
+import org.nullpointer.ratelimiter.storage.config.ConfigStore;
+import org.nullpointer.ratelimiter.storage.state.StateStore;
 
 public class HierarchicalConfigurationManager extends ConfigurationManager {
     private static final String DEFAULT_IDENTIFIER = "DEFAULT";
 
-    public HierarchicalConfigurationManager(Store store) {
-        super(store);
+    public HierarchicalConfigurationManager(ConfigStore configStore, StateStore stateStore) {
+        super(configStore, stateStore);
     }
 
     public void setHierarchyPolicy(HierarchicalRateLimitConfig policy) {
-        this.store.setHierarchyPolicy(policy);
+        this.configStore.setHierarchyPolicy(policy);
     }
 
     public HierarchicalRateLimitConfig getHierarchyPolicy() {
-        HierarchicalRateLimitConfig hierarchyPolicy = this.store.getHierarchyPolicy();
+        HierarchicalRateLimitConfig hierarchyPolicy = this.configStore.getHierarchyPolicy();
         if (hierarchyPolicy == null || hierarchyPolicy.isEmpty()) {
             throw new RateLimitConfigNotFoundException("No hierarchy policy configured");
         }
@@ -30,36 +31,36 @@ public class HierarchicalConfigurationManager extends ConfigurationManager {
     }
 
     public void addDefaultPolicy(RateLimitScope scope, RateLimitConfig config) {
-        this.store.setScopedPolicy(scope, DEFAULT_IDENTIFIER, config);
+        this.configStore.setScopedPolicy(scope, DEFAULT_IDENTIFIER, config);
     }
 
     public void addOverridePolicy(RateLimitScope scope, String identifier, RateLimitConfig config) {
         if (DEFAULT_IDENTIFIER.equals(identifier)) {
             throw new IllegalArgumentException("Identifier cannot be DEFAULT");
         }
-        this.store.setScopedPolicy(scope, identifier, config);
+        this.configStore.setScopedPolicy(scope, identifier, config);
     }
 
     public RateLimitConfig resolveConfig(RateLimitScope scope, RequestContext context) {
         // Check if any overrides are present
         String identifier = extractIdentifier(scope, context);
         if (identifier != null) {
-            RateLimitConfig overrideConfig = this.store.getScopedPolicy(scope, identifier);
+            RateLimitConfig overrideConfig = this.configStore.getScopedPolicy(scope, identifier);
             if (overrideConfig != null) {
                 return overrideConfig;
             }
         }
 
         // Fall back to default
-        return this.store.getScopedPolicy(scope, DEFAULT_IDENTIFIER);
+        return this.configStore.getScopedPolicy(scope, DEFAULT_IDENTIFIER);
     }
 
     public void setHierarchicalState(RateLimitKey key, RateLimitState state) {
-        this.store.setHierarchicalState(key, state);
+        this.stateStore.setHierarchicalState(key, state);
     }
 
     public RateLimitState getHierarchicalState(RateLimitKey key) {
-        return this.store.getHierarchicalState(key);
+        return this.stateStore.getHierarchicalState(key);
     }
 
     // Should match with RateLimitKeyGenerator.extractIdentifier()

@@ -43,11 +43,11 @@ public class HierarchicalRateLimitEngine {
             if (config == null) config = level.getDefaultConfig();
 
             RateLimitKey key = keyGenerator.generate(scope, context);
-            RateLimitState state = this.configurationManager.getState(key);
+            RateLimitState state = this.configurationManager.getHierarchicalState(key);
 
             if (state == null) { // Create state for first time
                 state = config.initialRateLimitState(time.nanoTime());
-                this.configurationManager.setState(key, state);
+                this.configurationManager.setHierarchicalState(key, state);
             }
 
             RateLimitingAlgorithm algorithm = config.getAlgorithm();
@@ -68,7 +68,7 @@ public class HierarchicalRateLimitEngine {
             if (config == null) config = level.getDefaultConfig();
 
             RateLimitKey key = keyGenerator.generate(scope, context);
-            RateLimitState state = this.configurationManager.getState(key);
+            RateLimitState state = this.configurationManager.getHierarchicalState(key);
 
             RateLimitingAlgorithm algorithm = config.getAlgorithm();
             lastResult = algorithm.tryConsume(key, config, state, time, cost);

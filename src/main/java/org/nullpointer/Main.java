@@ -7,8 +7,10 @@ import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.storage.InMemoryStore;
-import org.nullpointer.ratelimiter.storage.Store;
+import org.nullpointer.ratelimiter.storage.config.ConfigStore;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
+import org.nullpointer.ratelimiter.storage.state.StateStore;
 
 import java.util.concurrent.TimeUnit;
 
@@ -21,8 +23,9 @@ public class Main {
     }
 
     private static void demoFixedWindowCounterRateLimiter() {
-        Store store = new InMemoryStore();
-        ConfigurationManager configManager = new ConfigurationManager(store);
+        ConfigStore configStore = new InMemoryConfigStore();
+        StateStore stateStore = new InMemoryStateStore();
+        ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         FixedWindowCounterConfig config = new FixedWindowCounterConfig(10, 10, TimeUnit.SECONDS);
         RateLimiter rateLimiter = new RateLimiter(configManager);
@@ -51,8 +54,9 @@ public class Main {
     }
 
     private static void demoteLimiter() {
-        Store store = new InMemoryStore();
-        ConfigurationManager configManager = new ConfigurationManager(store);
+        ConfigStore configStore = new InMemoryConfigStore();
+        StateStore stateStore = new InMemoryStateStore();
+        ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         SlidingWindowConfig config = new SlidingWindowConfig(2, 5, TimeUnit.SECONDS);
         RateLimiter rateLimiter = new RateLimiter(configManager);
@@ -81,8 +85,9 @@ public class Main {
     }
 
     private static void demoTokenBucketRateLimiter() {
-        Store store = new InMemoryStore();
-        ConfigurationManager configManager = new ConfigurationManager(store);
+        ConfigStore configStore = new InMemoryConfigStore();
+        StateStore stateStore = new InMemoryStateStore();
+        ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         TokenBucketConfig config = new TokenBucketConfig(100, 10, 5, TimeUnit.SECONDS);
         RateLimiter rateLimiter = new RateLimiter(configManager);
@@ -95,8 +100,9 @@ public class Main {
     }
 
     private static void demoDefaultConfig() {
-        Store store = new InMemoryStore();
-        ConfigurationManager configManager = new ConfigurationManager(store);
+        ConfigStore configStore = new InMemoryConfigStore();
+        StateStore stateStore = new InMemoryStateStore();
+        ConfigurationManager configManager = new ConfigurationManager(configStore, stateStore);
 
         TokenBucketConfig defaultConfig = new TokenBucketConfig(100, 10, 5, TimeUnit.SECONDS);
         configManager.setDefaultConfig(defaultConfig);

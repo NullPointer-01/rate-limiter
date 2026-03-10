@@ -5,7 +5,10 @@ import org.nullpointer.ratelimiter.core.ConfigurationManager;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
-import org.nullpointer.ratelimiter.storage.InMemoryStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigStore;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
+import org.nullpointer.ratelimiter.storage.state.StateStore;
 
 import java.util.concurrent.TimeUnit;
 
@@ -16,8 +19,9 @@ class RateLimiterTest {
 
     @Test
     void clientDelegatesToEngine() {
-        InMemoryStore store = new InMemoryStore();
-        ConfigurationManager manager = new ConfigurationManager(store);
+        ConfigStore configStore = new InMemoryConfigStore();
+        StateStore stateStore = new InMemoryStateStore();
+        ConfigurationManager manager = new ConfigurationManager(configStore, stateStore);
         RateLimiter rateLimiter = new RateLimiter(manager);
 
         TokenBucketConfig config = new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS);

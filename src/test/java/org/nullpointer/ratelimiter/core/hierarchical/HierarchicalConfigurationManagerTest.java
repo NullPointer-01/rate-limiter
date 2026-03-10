@@ -10,7 +10,10 @@ import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLim
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.model.state.TokenBucketState;
-import org.nullpointer.ratelimiter.storage.InMemoryStore;
+import org.nullpointer.ratelimiter.storage.config.ConfigStore;
+import org.nullpointer.ratelimiter.storage.config.InMemoryConfigStore;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateStore;
+import org.nullpointer.ratelimiter.storage.state.StateStore;
 
 import java.util.concurrent.TimeUnit;
 
@@ -18,13 +21,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HierarchicalConfigurationManagerTest {
 
-    private InMemoryStore store;
+    private ConfigStore configStore;
+    private StateStore stateStore;
     private HierarchicalConfigurationManager manager;
 
     @BeforeEach
     void setUp() {
-        store = new InMemoryStore();
-        manager = new HierarchicalConfigurationManager(store);
+        configStore = new InMemoryConfigStore();
+        stateStore = new InMemoryStateStore();
+        manager = new HierarchicalConfigurationManager(configStore, stateStore);
     }
 
     @Test
@@ -66,7 +71,7 @@ class HierarchicalConfigurationManagerTest {
 
         manager.setHierarchyPolicy(policy);
 
-        HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(store);
+        HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(configStore, stateStore);
         HierarchicalRateLimitConfig retrieved = anotherManager.getHierarchyPolicy();
         assertNotNull(retrieved);
         assertEquals(1, retrieved.getLevels().size());
@@ -96,7 +101,7 @@ class HierarchicalConfigurationManagerTest {
         TokenBucketConfig defaultConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         manager.addDefaultPolicy(RateLimitScope.USER, defaultConfig);
 
-        HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(store);
+        HierarchicalConfigurationManager anotherManager = new HierarchicalConfigurationManager(configStore, stateStore);
         RequestContext context = RequestContext.builder().userId("user1").build();
         assertSame(defaultConfig, anotherManager.resolveConfig(RateLimitScope.USER, context));
     }
