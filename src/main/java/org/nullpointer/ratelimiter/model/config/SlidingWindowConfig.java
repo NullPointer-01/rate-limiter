@@ -1,5 +1,8 @@
 package org.nullpointer.ratelimiter.model.config;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.nullpointer.ratelimiter.algorithms.AlgorithmType;
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
 import org.nullpointer.ratelimiter.factory.AlgorithmFactory;
@@ -17,6 +20,14 @@ public class SlidingWindowConfig implements RateLimitConfig {
         this.windowSizeMillis = timeUnit.toMillis(windowSize);
     }
 
+    @JsonCreator
+    protected SlidingWindowConfig(
+            @JsonProperty("maxCost") long maxCost,
+            @JsonProperty("windowSizeMillis") long windowSizeMillis) {
+        this.maxCost = maxCost;
+        this.windowSizeMillis = windowSizeMillis;
+    }
+
     public long getWindowSizeMillis() {
         return windowSizeMillis;
     }
@@ -26,11 +37,13 @@ public class SlidingWindowConfig implements RateLimitConfig {
     }
 
     @Override
+    @JsonIgnore
     public RateLimitingAlgorithm getAlgorithm() {
         return AlgorithmFactory.getAlgorithmByType(AlgorithmType.SLIDING_WINDOW);
     }
 
     @Override
+    @JsonIgnore
     public RateLimitState initialRateLimitState(long nanoTime) {
         return new SlidingWindowState();
     }

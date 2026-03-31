@@ -1,5 +1,8 @@
 package org.nullpointer.ratelimiter.model.config;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.nullpointer.ratelimiter.algorithms.AlgorithmType;
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
 import org.nullpointer.ratelimiter.factory.AlgorithmFactory;
@@ -19,6 +22,16 @@ public class TokenBucketConfig implements RateLimitConfig {
         this.refillIntervalMillis = timeUnit.toMillis(refillInterval);
     }
 
+    @JsonCreator
+    protected TokenBucketConfig(
+            @JsonProperty("capacity") double capacity,
+            @JsonProperty("refillTokens") double refillTokens,
+            @JsonProperty("refillIntervalMillis") double refillIntervalMillis) {
+        this.capacity = capacity;
+        this.refillTokens = refillTokens;
+        this.refillIntervalMillis = refillIntervalMillis;
+    }
+
     public double getCapacity() {
         return capacity;
     }
@@ -32,11 +45,13 @@ public class TokenBucketConfig implements RateLimitConfig {
     }
 
     @Override
+    @JsonIgnore
     public RateLimitingAlgorithm getAlgorithm() {
         return AlgorithmFactory.getAlgorithmByType(AlgorithmType.TOKEN_BUCKET);
     }
 
     @Override
+    @JsonIgnore
     public RateLimitState initialRateLimitState(long nanoTime) {
         return new TokenBucketState(capacity, nanoTime);
     }

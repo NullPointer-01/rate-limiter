@@ -1,14 +1,26 @@
 package org.nullpointer.ratelimiter.model.state;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SlidingWindowCounterState implements RateLimitState {
+    @JsonProperty("originNanos")
     private final long originNanos;
+
+    @JsonProperty("windows")
+    @JsonDeserialize(as = ConcurrentHashMap.class)
     private final Map<Long, Long> windows;
+
+    @JsonIgnore
     private final int nWindows = 5; // N oldest windows
 
-    public SlidingWindowCounterState(long originNanos) {
+    @JsonCreator
+    public SlidingWindowCounterState(@JsonProperty("originNanos") long originNanos) {
         this.windows = new ConcurrentHashMap<>();
         this.originNanos = originNanos;
     }
@@ -42,5 +54,10 @@ public class SlidingWindowCounterState implements RateLimitState {
         if (windows.size() >= nWindows) {
             windows.clear();
         }
+    }
+
+    @JsonProperty("windows")
+    protected void setWindows(Map<Long, Long> windows) {
+        this.windows.putAll(windows);
     }
 }

@@ -4,6 +4,9 @@ public class TokenBucketState implements RateLimitState {
     private double availableTokens;
     private long lastRefillNanos;
 
+    protected TokenBucketState() {
+    }
+
     public TokenBucketState(double availableTokens, long lastRefillNanos) {
         this.availableTokens = availableTokens;
         this.lastRefillNanos = lastRefillNanos;

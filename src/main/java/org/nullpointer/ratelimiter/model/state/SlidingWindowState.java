@@ -1,14 +1,30 @@
 package org.nullpointer.ratelimiter.model.state;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.List;
 
 public class SlidingWindowState implements RateLimitState {
+    @JsonProperty("currentWindowCost")
     private long currentWindowCost;
+
+    @JsonProperty("deque")
     private final Deque<Request> deque;
 
     public SlidingWindowState() {
         this.deque = new ArrayDeque<>();
+    }
+
+    @JsonCreator
+    public SlidingWindowState(
+            @JsonProperty("currentWindowCost") long currentWindowCost,
+            @JsonProperty("deque") List<Request> deque) {
+        this.currentWindowCost = currentWindowCost;
+        this.deque = deque != null ? new ArrayDeque<>(deque) : new ArrayDeque<>();
     }
 
     public void appendRequest(long cost, long timestampNanos) {
@@ -30,6 +46,7 @@ public class SlidingWindowState implements RateLimitState {
         return deque.isEmpty();
     }
 
+    @JsonIgnore
     public long getOldestTimestampNanos() {
         assert deque.peekFirst() != null;
         return deque.peekFirst().timestampNanos;
@@ -55,8 +72,14 @@ public class SlidingWindowState implements RateLimitState {
     }
 
     static class Request {
+        @JsonProperty("cost")
         long cost;
+
+        @JsonProperty("timestampNanos")
         long timestampNanos;
+
+        protected Request() {
+        }
 
         Request(long cost, long timestampNanos) {
             this.cost = cost;
