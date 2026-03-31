@@ -29,7 +29,10 @@ public class HierarchicalRateLimitEngine {
     }
 
     public RateLimitResult process(RequestContext context, int cost) {
-        RequestTime time = timeSource.capture();
+        return process(context, cost, timeSource.capture());
+    }
+
+    public RateLimitResult process(RequestContext context, int cost, RequestTime time) {
         RateLimitResult lastResult = null;
 
         HierarchicalRateLimitPolicy hierarchyPolicy = configurationManager.getHierarchyPolicy();

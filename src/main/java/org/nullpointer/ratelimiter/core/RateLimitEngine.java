@@ -31,6 +31,10 @@ public class RateLimitEngine {
     }
 
     public RateLimitResult process(RateLimitKey key, int cost) {
+        return process(key, cost, timeSource.capture());
+    }
+
+    public RateLimitResult process(RateLimitKey key, int cost, RequestTime time) {
         if (!cb.allowExecution()) {
             RateLimitResult fallbackResult = cb.getFallbackResult();
             if (fallbackResult.isAllowed()) {
@@ -43,7 +47,6 @@ public class RateLimitEngine {
 
         try {
             RateLimitConfig config = this.configurationManager.getConfig(key);
-            RequestTime time = timeSource.capture();
 
             RateLimitState state = this.configurationManager.getState(key);
             if (state == null) {
