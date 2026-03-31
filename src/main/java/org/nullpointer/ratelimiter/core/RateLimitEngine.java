@@ -48,11 +48,11 @@ public class RateLimitEngine {
             RateLimitState state = this.configurationManager.getState(key);
             if (state == null) {
                 state = config.initialRateLimitState(time.nanoTime());
-                this.configurationManager.setState(key, state);
             }
 
             RateLimitingAlgorithm algorithm = config.getAlgorithm();
             RateLimitResult result = algorithm.tryConsume(key, config, state, time, cost);
+            this.configurationManager.setState(key, state);
 
             if (result.isAllowed()) {
                 metrics.logAllowed();

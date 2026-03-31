@@ -72,6 +72,7 @@ public class HierarchicalRateLimitEngine {
 
             RateLimitingAlgorithm algorithm = config.getAlgorithm();
             lastResult = algorithm.tryConsume(key, config, state, time, cost);
+            this.configurationManager.setHierarchicalState(key, state);
         }
         metrics.logAllowed();
 
