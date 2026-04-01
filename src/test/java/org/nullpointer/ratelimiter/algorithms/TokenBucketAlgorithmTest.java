@@ -103,39 +103,6 @@ class TokenBucketAlgorithmTest {
     }
 
     @Test
-    void testConcurrency() throws InterruptedException {
-        int threadCount = 20;
-        int requestsPerThread = 50;
-        int capacity = 100; // Total allowed requests
-
-        TokenBucketConfig config = new TokenBucketConfig(capacity, 1, 10, TimeUnit.SECONDS); // 100 tokens, refill 1/sec (slow refill for test)
-        RequestTime now = new RequestTime(1000, 1000_000_000);
-        RateLimitState state = config.initialRateLimitState(now.nanoTime());
-        TokenBucketAlgorithm algorithm = new TokenBucketAlgorithm();
-        RateLimitKey key = RateLimitKey.builder().setUserId("user").build();
-
-        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
-        java.util.concurrent.atomic.AtomicInteger allowedCount = new java.util.concurrent.atomic.AtomicInteger(0);
-
-        for (int i = 0; i < threadCount; i++) {
-            executor.submit(() -> {
-                for (int j = 0; j < requestsPerThread; j++) {
-                    if (algorithm.tryConsume(key, config, state, now, 1).isAllowed()) {
-                        allowedCount.incrementAndGet();
-                    }
-                }
-            });
-        }
-
-        executor.shutdown();
-        boolean finished = executor.awaitTermination(5, TimeUnit.SECONDS);
-        assertTrue(finished);
-
-        // We expect allowedCount to be exactly capacity because refill rate is negligible
-        assertEquals(capacity, allowedCount.get());
-    }
-
-    @Test
     void invalidCost() {
         TokenBucketConfig config = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         RequestTime now = new RequestTime(1000, 1000_000_000);

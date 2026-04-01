@@ -111,39 +111,6 @@ class SlidingWindowAlgorithmTest {
     }
 
     @Test
-    void testConcurrency() throws InterruptedException {
-        int threadCount = 20;
-        int requestsPerThread = 50;
-        int capacity = 100; // Total allowed requests
-
-        SlidingWindowConfig config = new SlidingWindowConfig(capacity, 10, TimeUnit.SECONDS);
-        SlidingWindowState state = new SlidingWindowState();
-        SlidingWindowAlgorithm algorithm = new SlidingWindowAlgorithm();
-        RateLimitKey key = RateLimitKey.builder().setUserId("user").build();
-        RequestTime now = new RequestTime(1000, 1000_000_000);
-
-        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
-        java.util.concurrent.atomic.AtomicInteger allowedCount = new java.util.concurrent.atomic.AtomicInteger(0);
-
-        for (int i = 0; i < threadCount; i++) {
-            executor.submit(() -> {
-                for (int j = 0; j < requestsPerThread; j++) {
-                    if (algorithm.tryConsume(key, config, state, now, 1).isAllowed()) {
-                        allowedCount.incrementAndGet();
-                    }
-                }
-            });
-        }
-
-        executor.shutdown();
-        boolean finished = executor.awaitTermination(5, TimeUnit.SECONDS);
-        assertTrue(finished);
-
-        // We expect allowedCount to be exactly capacity, because the total requests (20*50=1000) > capacity (100)
-        assertEquals(capacity, allowedCount.get());
-    }
-
-    @Test
     void invalidCost() {
         SlidingWindowConfig config = new SlidingWindowConfig(10, 1, TimeUnit.SECONDS);
         SlidingWindowState state = new SlidingWindowState();

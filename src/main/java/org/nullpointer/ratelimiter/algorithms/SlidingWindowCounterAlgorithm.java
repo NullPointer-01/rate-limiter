@@ -14,12 +14,12 @@ import java.util.Objects;
 public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
+    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
         return tryConsume(key, config, state, time, 1);
     }
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
+    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
         return evaluate(key, config, state, time, cost, false);
     }
 
@@ -28,7 +28,7 @@ public class SlidingWindowCounterAlgorithm implements RateLimitingAlgorithm {
         return evaluate(key, config, state, time, cost, true);
     }
 
-    private synchronized RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost, boolean isReadOnly) {
+    private RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost, boolean isReadOnly) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 

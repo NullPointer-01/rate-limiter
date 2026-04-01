@@ -14,12 +14,12 @@ import java.util.Objects;
 public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
+    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
         return tryConsume(key, config, state, time, 1);
     }
 
     @Override
-    public synchronized RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long tokens) {
+    public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long tokens) {
         return evaluate(key, config, state, time, tokens, false);
     }
 

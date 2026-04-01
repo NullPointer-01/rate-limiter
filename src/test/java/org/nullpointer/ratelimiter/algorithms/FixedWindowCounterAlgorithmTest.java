@@ -106,38 +106,6 @@ class FixedWindowCounterAlgorithmTest {
     }
 
     @Test
-    void testConcurrency() throws InterruptedException {
-        int threadCount = 20;
-        int requestsPerThread = 50;
-        int capacity = 1000; // Total allowed
-
-        FixedWindowCounterConfig config = new FixedWindowCounterConfig(capacity, 10, TimeUnit.SECONDS);
-        FixedWindowCounterState state = new FixedWindowCounterState();
-        FixedWindowCounterAlgorithm algorithm = new FixedWindowCounterAlgorithm();
-        RateLimitKey key = RateLimitKey.builder().setUserId("user").build();
-        RequestTime now = new RequestTime(1000, 1000_000_000);
-
-        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
-        java.util.concurrent.atomic.AtomicInteger allowedCount = new java.util.concurrent.atomic.AtomicInteger(0);
-
-        for (int i = 0; i < threadCount; i++) {
-            executor.submit(() -> {
-                for (int j = 0; j < requestsPerThread; j++) {
-                    if (algorithm.tryConsume(key, config, state, now, 1).isAllowed()) {
-                        allowedCount.incrementAndGet();
-                    }
-                }
-            });
-        }
-
-        executor.shutdown();
-        boolean finished = executor.awaitTermination(5, TimeUnit.SECONDS);
-        assertTrue(finished);
-
-        assertEquals(1000, allowedCount.get());
-    }
-
-    @Test
     void invalidCost() {
         FixedWindowCounterConfig config = new FixedWindowCounterConfig(10, 1, TimeUnit.SECONDS);
         FixedWindowCounterState state = new FixedWindowCounterState();

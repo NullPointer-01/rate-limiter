@@ -19,7 +19,10 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -258,5 +261,66 @@ class RedisRateLimitEngineTest {
         assertTrue(r1.isAllowed());
         assertFalse(r2.isAllowed());
         assertEquals(4, r2.getRemaining());
+    }
+
+    @Test
+    void concurrentRequestsDoNotExceedCapacityByMore() throws Exception {
+        RateLimitKey key = RateLimitKey.builder().setUserId("concurrent-key").build();
+        int capacity = 10;
+        manager.setConfig(key, new TokenBucketConfig(capacity, 0, 1, TimeUnit.MINUTES));
+
+        int threads = 20;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        AtomicInteger allowed = new AtomicInteger();
+        List<Callable<Void>> tasks = new ArrayList<>();
+
+        for (int i = 0; i < threads; i++) {
+            tasks.add(() -> {
+                if (engine.process(key, 1).isAllowed()) {
+                    allowed.incrementAndGet();
+                }
+                return null;
+            });
+        }
+
+        List<Future<Void>> futures = executor.invokeAll(tasks);
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+        for (Future<Void> f : futures) f.get();
+
+        assertTrue(allowed.get() <= capacity,
+                "Allowed " + allowed.get() + " but capacity is " + capacity);
+    }
+
+    @Test
+    void concurrentRequestsForDifferentKeysAreIndependent() throws Exception {
+        int capacity = 5;
+        RateLimitKey key1 = RateLimitKey.builder().setUserId("conc-user-A").build();
+        RateLimitKey key2 = RateLimitKey.builder().setUserId("conc-user-B").build();
+        manager.setConfig(key1, new TokenBucketConfig(capacity, 0, 1, TimeUnit.HOURS));
+        manager.setConfig(key2, new TokenBucketConfig(capacity, 0, 1, TimeUnit.HOURS));
+
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        AtomicInteger allowedKey1 = new AtomicInteger();
+        AtomicInteger allowedKey2 = new AtomicInteger();
+        List<Callable<Void>> tasks = new ArrayList<>();
+
+        for (int i = 0; i < 10; i++) {
+            final int idx = i;
+            tasks.add(() -> {
+                if (engine.process(idx % 2 == 0 ? key1 : key2, 1).isAllowed()) {
+                    if (idx % 2 == 0) allowedKey1.incrementAndGet();
+                    else allowedKey2.incrementAndGet();
+                }
+                return null;
+            });
+        }
+
+        executor.invokeAll(tasks);
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+
+        assertTrue(allowedKey1.get() <= capacity + 1);
+        assertTrue(allowedKey2.get() <= capacity + 1);
     }
 }

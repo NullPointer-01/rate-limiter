@@ -13,11 +13,16 @@ import org.nullpointer.ratelimiter.resilience.CircuitBreaker;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class RateLimitEngine {
     private final ConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimiterMetrics metrics;
     private final CircuitBreaker cb;
+
+    private final Map<String, Object> locks;
 
     public RateLimitEngine(ConfigurationManager configurationManager) {
         this(configurationManager, CircuitBreakerFactory.defaultCircuitBreakerConfig());
@@ -28,6 +33,7 @@ public class RateLimitEngine {
         this.timeSource = new SystemTimeSource();
         this.metrics = new RateLimiterMetrics();
         this.cb = new CircuitBreaker(timeSource, cbConfig);
+        this.locks = new ConcurrentHashMap<>();
     }
 
     public RateLimitResult process(RateLimitKey key, int cost) {
@@ -47,15 +53,21 @@ public class RateLimitEngine {
 
         try {
             RateLimitConfig config = this.configurationManager.getConfig(key);
+            RateLimitResult result;
 
-            RateLimitState state = this.configurationManager.getState(key);
-            if (state == null) {
-                state = config.initialRateLimitState(time.nanoTime());
+            String k = key.toKey();
+            Object lock = locks.computeIfAbsent(k, k1 -> new Object());
+
+            synchronized (lock) {
+                RateLimitState state = this.configurationManager.getState(key);
+                if (state == null) {
+                    state = config.initialRateLimitState(time.nanoTime());
+                }
+
+                RateLimitingAlgorithm algorithm = config.getAlgorithm();
+                result = algorithm.tryConsume(key, config, state, time, cost);
+                this.configurationManager.setState(key, state);
             }
-
-            RateLimitingAlgorithm algorithm = config.getAlgorithm();
-            RateLimitResult result = algorithm.tryConsume(key, config, state, time, cost);
-            this.configurationManager.setState(key, state);
 
             if (result.isAllowed()) {
                 metrics.logAllowed();
