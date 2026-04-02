@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonMerge;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -44,7 +45,8 @@ public class FixedWindowCounterState implements RateLimitState {
      */
     private void clearOldestEntries() {
         if (windows.size() >= nWindows) {
-            windows.clear();
+            Long minWindowId = windows.keySet().stream().min(Comparator.comparingLong(key -> key)).get();
+            windows.remove(minWindowId);
         }
     }
 }

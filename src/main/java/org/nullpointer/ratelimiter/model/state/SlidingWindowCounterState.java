@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -48,11 +49,12 @@ public class SlidingWindowCounterState implements RateLimitState {
     }
 
     /**
-     * Delete older windows
+     * Delete the oldest window
      */
     private void clearOldestEntries() {
         if (windows.size() >= nWindows) {
-            windows.clear();
+            Long minWindowId = windows.keySet().stream().min(Comparator.comparingLong(key -> key)).get();
+            windows.remove(minWindowId);
         }
     }
 
