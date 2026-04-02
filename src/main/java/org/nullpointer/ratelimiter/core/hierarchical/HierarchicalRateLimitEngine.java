@@ -15,17 +15,23 @@ import org.nullpointer.ratelimiter.utils.RateLimitKeyGenerator;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class HierarchicalRateLimitEngine {
     private final HierarchicalConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimitKeyGenerator keyGenerator;
     private final RateLimiterMetrics metrics;
 
+    private final Map<String, Object> locks;
+
     public HierarchicalRateLimitEngine(HierarchicalConfigurationManager configurationManager) {
         this.configurationManager = configurationManager;
         this.timeSource = new SystemTimeSource();
         this.keyGenerator = new RateLimitKeyGenerator();
         this.metrics = new RateLimiterMetrics();
+        this.locks = new ConcurrentHashMap<>();
     }
 
     public RateLimitResult process(RequestContext context, int cost) {
@@ -46,12 +52,9 @@ public class HierarchicalRateLimitEngine {
             if (config == null) config = level.getDefaultConfig();
 
             RateLimitKey key = keyGenerator.generate(scope, context);
-            RateLimitState state = this.configurationManager.getHierarchicalState(key);
+            RateLimitState state = configurationManager.getHierarchicalState(key);
 
-            if (state == null) { // Create state for first time
-                state = config.initialRateLimitState(time.nanoTime());
-                this.configurationManager.setHierarchicalState(key, state);
-            }
+            if (state == null) continue; // Skip since it is the initial request for the key
 
             RateLimitingAlgorithm algorithm = config.getAlgorithm();
             RateLimitResult result = algorithm.checkLimit(key, config, state, time, cost);
@@ -71,11 +74,25 @@ public class HierarchicalRateLimitEngine {
             if (config == null) config = level.getDefaultConfig();
 
             RateLimitKey key = keyGenerator.generate(scope, context);
-            RateLimitState state = this.configurationManager.getHierarchicalState(key);
+            String k = key.toKey();
+            Object lock = locks.computeIfAbsent(k, k1 -> new Object());
 
-            RateLimitingAlgorithm algorithm = config.getAlgorithm();
-            lastResult = algorithm.tryConsume(key, config, state, time, cost);
-            this.configurationManager.setHierarchicalState(key, state);
+            synchronized (lock) {
+                RateLimitState state = this.configurationManager.getHierarchicalState(key);
+                if (state == null) { // Create state for first time
+                    state = config.initialRateLimitState(time.nanoTime());
+                }
+
+                RateLimitingAlgorithm algorithm = config.getAlgorithm();
+                lastResult = algorithm.tryConsume(key, config, state, time, cost);
+                this.configurationManager.setHierarchicalState(key, state);
+
+                // TOCTOU race condition - Between the time of dry run and consume loop, states might have changed
+                if (!lastResult.isAllowed()) {
+                    metrics.logRejected();
+                    return lastResult;
+                }
+            }
         }
         metrics.logAllowed();
 

@@ -20,10 +20,12 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class RedisHierarchicalRateLimitEngineTest {
 
@@ -261,6 +263,67 @@ class RedisHierarchicalRateLimitEngineTest {
 
         assertTrue(engine.process(ctx, 3).isAllowed()); // user: 2 remaining, global: 7 remaining
         assertFalse(engine.process(ctx, 3).isAllowed()); // user has only 2, needs 3
+    }
+
+    @Test
+    void concurrentRequestsRespectUserLevelLimit() throws Exception {
+        configManager.setHierarchyPolicy(policyWith(
+                RateLimitScope.USER, new TokenBucketConfig(10, 0, 1, TimeUnit.HOURS)));
+
+        RequestContext ctx = RequestContext.builder().userId("h-concurrent-users").build();
+        int threads = 20;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        AtomicInteger allowed = new AtomicInteger(0);
+        List<Callable<Void>> tasks = new ArrayList<>();
+
+        for (int i = 0; i < threads; i++) {
+            tasks.add(() -> {
+                if (engine.process(ctx, 1).isAllowed()) {
+                    allowed.incrementAndGet();
+                }
+                return null;
+            });
+        }
+
+        List<Future<Void>> futures = executor.invokeAll(tasks);
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+        for (Future<Void> f : futures) f.get();
+
+        assertEquals(allowed.get(), 10, "Allowed " + allowed.get() + " out of 10 capacity");
+    }
+
+    @Test
+    void concurrentRequestsFromDifferentUsersDoNotInterfere() throws Exception {
+        configManager.setHierarchyPolicy(policyWith(
+                RateLimitScope.USER, new TokenBucketConfig(5, 0, 1, TimeUnit.HOURS)));
+
+        int usersCount = 4;
+        int requestsPerUser = 5;
+        ExecutorService executor = Executors.newFixedThreadPool(usersCount * requestsPerUser);
+        AtomicInteger totalAllowed = new AtomicInteger();
+        List<Callable<Void>> tasks = new ArrayList<>();
+
+        for (int u = 0; u < usersCount; u++) {
+            final String userId = "h-multi-user-" + u;
+            for (int r = 0; r < requestsPerUser; r++) {
+                tasks.add(() -> {
+                    RequestContext ctx = RequestContext.builder().userId(userId).build();
+                    if (engine.process(ctx, 1).isAllowed()) {
+                        totalAllowed.incrementAndGet();
+                    }
+                    return null;
+                });
+            }
+        }
+
+        List<Future<Void>> futures = executor.invokeAll(tasks);
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+        for (Future<Void> f : futures) f.get();
+
+        assertEquals(totalAllowed.get(), usersCount * requestsPerUser,
+                "Expected most requests to be allowed across independent users");
     }
 
     private HierarchicalRateLimitPolicy policyWith(RateLimitScope scope, RateLimitConfig config) {
