@@ -1,0 +1,10 @@
+plans:
+  free:
+    levels:
+      - scope: USER
+        config:
+          type: token_bucket
+          capacity: 10
+          refillTokens: 1
+          refillIntervalMillis: 1000
+        stateRepositoryType: IN_MEMORY
