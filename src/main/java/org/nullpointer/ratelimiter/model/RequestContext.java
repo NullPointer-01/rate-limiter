@@ -3,6 +3,7 @@ package org.nullpointer.ratelimiter.model;
 import java.util.Optional;
 
 public class RequestContext {
+    private final SubscriptionPlan plan;
     private final String tenantId;
     private final String userId;
     private final String ipAddress;
@@ -12,6 +13,9 @@ public class RequestContext {
     private final String region;
 
     private RequestContext(Builder builder) {
+        if (builder.plan == null) throw new IllegalArgumentException("Plan is required on RequestContext");
+
+        this.plan = builder.plan;
         this.tenantId = builder.tenantId;
         this.userId = builder.userId;
         this.ipAddress = builder.ipAddress;
@@ -23,6 +27,10 @@ public class RequestContext {
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    public SubscriptionPlan getPlan() {
+        return plan;
     }
 
     public Optional<String> getTenantId() {
@@ -54,6 +62,7 @@ public class RequestContext {
     }
 
     public static class Builder {
+        private SubscriptionPlan plan;
         private String tenantId;
         private String userId;
         private String ipAddress;
@@ -61,6 +70,11 @@ public class RequestContext {
         private String apiPath;
         private String httpMethod;
         private String region;
+
+        public Builder plan(SubscriptionPlan plan) {
+            this.plan = plan;
+            return this;
+        }
 
         public Builder tenantId(String tenantId) {
             this.tenantId = tenantId;
