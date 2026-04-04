@@ -1,0 +1,9 @@
+redis:
+  host: localhost
+  port: 6379
+  timeout: 2000
+  database: 0
+  pool:
+    maxTotal: 64
+    maxIdle: 16
+    minIdle: 4
