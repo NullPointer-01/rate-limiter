@@ -5,14 +5,20 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.utils.PlanPolicyLoader;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.RequestTime;
+import org.nullpointer.ratelimiter.model.SubscriptionPlan;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
+import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
+import org.nullpointer.ratelimiter.model.state.StateRepositoryType;
+import org.nullpointer.ratelimiter.factory.StateRepositoryFactory;
 import org.nullpointer.ratelimiter.storage.config.RedisConfigRepository;
 import org.nullpointer.ratelimiter.storage.state.RedisStateRepository;
 import org.nullpointer.ratelimiter.utils.JacksonSerializer;
@@ -49,47 +55,58 @@ class RedisHierarchicalRateLimitEngineTest {
 
     @BeforeEach
     void setUp() {
-        // Flush all Redis state before each test to ensure isolation
         try (Jedis jedis = pool.getResource()) {
             jedis.flushAll();
         }
 
         JacksonSerializer serializer = new JacksonSerializer();
+        RedisStateRepository stateRepo = new RedisStateRepository(pool, serializer);
+        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
+        registry.clearRegistry();
+
+        registry.register(StateRepositoryType.IN_MEMORY, new InMemoryStateRepository());
+        registry.register(StateRepositoryType.REDIS, new RedisStateRepository(pool, serializer));
+
         configManager = new HierarchicalConfigurationManager(
                 new RedisConfigRepository(pool, serializer),
-                new RedisStateRepository(pool, serializer)
+                stateRepo,
+                PlanPolicyLoader.getInstance(),
+                registry
         );
         engine = new HierarchicalRateLimitEngine(configManager);
     }
 
+    private RequestContext ctx(String userId) {
+        return RequestContext.builder().plan(SubscriptionPlan.FREE).userId(userId).build();
+    }
+
+    private void configureLevel(RateLimitScope scope, RateLimitConfig config) {
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
+        policy.addLevel(new RateLimitLevel(scope, config, StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
+    }
+
     @Test
     void singleUserLevelAllowsWithinLimit() {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS)));
+        configureLevel(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
 
-        RequestContext ctx = RequestContext.builder().userId("h-user-allow").build();
-
-        assertTrue(engine.process(ctx, 1).isAllowed());
+        assertTrue(engine.process(ctx("h-user-allow"), 1).isAllowed());
     }
 
     @Test
     void singleUserLevelDeniesWhenExhausted() {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS)));
+        configureLevel(RateLimitScope.USER, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
 
-        RequestContext ctx = RequestContext.builder().userId("h-user-deny").build();
-
+        RequestContext ctx = ctx("h-user-deny");
         assertTrue(engine.process(ctx, 2).isAllowed());
         assertFalse(engine.process(ctx, 2).isAllowed());
     }
 
     @Test
     void singleUserLevelRemainingDecrementsCorrectly() {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS)));
+        configureLevel(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
 
-        RequestContext ctx = RequestContext.builder().userId("h-remaining").build();
-
+        RequestContext ctx = ctx("h-remaining");
         RateLimitResult r1 = engine.process(ctx, 1);
         RateLimitResult r2 = engine.process(ctx, 1);
         RateLimitResult r3 = engine.process(ctx, 3);
@@ -101,12 +118,11 @@ class RedisHierarchicalRateLimitEngineTest {
     @Test
     void globalBottleneckDeniesEvenWithPermissiveUserLimit() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
-        configManager.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(2,   1,  1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
 
-        RequestContext ctx = RequestContext.builder().userId("h-global-bot").build();
-
+        RequestContext ctx = ctx("user-1");
         assertTrue(engine.process(ctx, 1).isAllowed());
         assertTrue(engine.process(ctx, 1).isAllowed());
         assertFalse(engine.process(ctx, 1).isAllowed()); // global exhausted
@@ -115,12 +131,11 @@ class RedisHierarchicalRateLimitEngineTest {
     @Test
     void userBottleneckDeniesEvenWithPermissiveGlobalLimit() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
-        configManager.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER,   new TokenBucketConfig(2,   1,  1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
 
-        RequestContext ctx = RequestContext.builder().userId("h-user-bot").build();
-
+        RequestContext ctx = ctx("user-2");
         assertTrue(engine.process(ctx, 1).isAllowed());
         assertTrue(engine.process(ctx, 1).isAllowed());
         assertFalse(engine.process(ctx, 1).isAllowed()); // user exhausted
@@ -129,13 +144,14 @@ class RedisHierarchicalRateLimitEngineTest {
     @Test
     void allLevelsMustAllowForRequestToSucceed() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.ENDPOINT, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
-        configManager.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(10,  1,  1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        policy.addLevel(new RateLimitLevel(RateLimitScope.ENDPOINT, new TokenBucketConfig(5,   1,  1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
 
         RequestContext ctx = RequestContext.builder()
-                .userId("h-all-levels")
+                .plan(SubscriptionPlan.FREE)
+                .userId("user-3")
                 .apiPath("/api/test")
                 .httpMethod("GET")
                 .build();
@@ -145,28 +161,22 @@ class RedisHierarchicalRateLimitEngineTest {
 
     @Test
     void differentUsersHaveIndependentUserLevelQuotas() {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS)));
+        configureLevel(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
 
-        RequestContext user1 = RequestContext.builder().userId("h-isolated-u1").build();
-        RequestContext user2 = RequestContext.builder().userId("h-isolated-u2").build();
-
-        engine.process(user1, 2); // exhaust user1
-
-        // user2 is completely unaffected
-        assertTrue(engine.process(user2, 1).isAllowed());
-        assertTrue(engine.process(user2, 1).isAllowed());
+        engine.process(ctx("user-1"), 2); // exhaust user1
+        assertTrue(engine.process(ctx("user-2"), 1).isAllowed());
+        assertTrue(engine.process(ctx("user-2"), 1).isAllowed());
     }
 
     @Test
     void globalLimitIsSharedAcrossAllUsers() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
-        configManager.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(3,   1,  1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
 
-        RequestContext user1 = RequestContext.builder().userId("h-shared-u1").build();
-        RequestContext user2 = RequestContext.builder().userId("h-shared-u2").build();
+        RequestContext user1 = ctx("user1");
+        RequestContext user2 = ctx("user2");
 
         assertTrue(engine.process(user1, 1).isAllowed()); // global: 2 remaining
         assertTrue(engine.process(user2, 1).isAllowed()); // global: 1 remaining
@@ -176,18 +186,17 @@ class RedisHierarchicalRateLimitEngineTest {
 
     @Test
     void premiumUserOverrideConfigGrantsHigherLimit() {
+        TokenBucketConfig regularCfg = new TokenBucketConfig(2,  1, 1, TimeUnit.SECONDS);
+        TokenBucketConfig premiumCfg = new TokenBucketConfig(20, 5, 1, TimeUnit.SECONDS);
+
+        // Default config is regularCfg; "premium-user" gets an entity override
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
-        configManager.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER, regularCfg, StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
+        configManager.overrideScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "premium-user", premiumCfg);
 
-        // Default user limit is 2; premium user gets 20
-        configManager.setDefaultScopedConfig(RateLimitScope.USER,
-                new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS));
-        configManager.setOverrideScopedConfig(RateLimitScope.USER, "premium-user",
-                new TokenBucketConfig(20, 5, 1, TimeUnit.SECONDS));
-
-        RequestContext regular = RequestContext.builder().userId("regular-user").build();
-        RequestContext premium = RequestContext.builder().userId("premium-user").build();
+        RequestContext regular = RequestContext.builder().plan(SubscriptionPlan.FREE).userId("regular-user").build();
+        RequestContext premium = RequestContext.builder().plan(SubscriptionPlan.FREE).userId("premium-user").build();
 
         // Regular user: only 2 allowed
         engine.process(regular, 2);
@@ -202,11 +211,9 @@ class RedisHierarchicalRateLimitEngineTest {
 
     @Test
     void retryAfterMillisIsPositiveWhenDeniedAtUserLevel() {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new TokenBucketConfig(2, 1, 60, TimeUnit.SECONDS)));
+        configureLevel(RateLimitScope.USER, new TokenBucketConfig(2, 1, 60, TimeUnit.SECONDS));
 
-        RequestContext ctx = RequestContext.builder().userId("h-retry-user").build();
-
+        RequestContext ctx = ctx("h-retry-user");
         engine.process(ctx, 2); // exhaust
         RateLimitResult denied = engine.process(ctx, 1);
 
@@ -217,12 +224,11 @@ class RedisHierarchicalRateLimitEngineTest {
     @Test
     void retryAfterMillisIsPositiveWhenDeniedAtGlobalLevel() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(2, 1, 60, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
-        configManager.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(2,   1,  60, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER,   new TokenBucketConfig(100, 10, 1,  TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
 
-        RequestContext ctx = RequestContext.builder().userId("h-retry-global").build();
-
+        RequestContext ctx = ctx("retry-user");
         engine.process(ctx, 2); // exhaust global
         RateLimitResult denied = engine.process(ctx, 1);
 
@@ -232,11 +238,9 @@ class RedisHierarchicalRateLimitEngineTest {
 
     @Test
     void fixedWindowResetsAllowsRequestsAfterWindowExpires() {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new FixedWindowCounterConfig(3, 100, TimeUnit.MILLISECONDS)));
+        configureLevel(RateLimitScope.USER, new FixedWindowCounterConfig(3, 100, TimeUnit.MILLISECONDS));
 
-        RequestContext ctx = RequestContext.builder().userId("h-fw-reset").build();
-
+        RequestContext ctx = ctx("reset-user");
         long baseMillis = 1000L;
         RequestTime t1 = new RequestTime(baseMillis, baseMillis * 1_000_000L);
 
@@ -244,7 +248,6 @@ class RedisHierarchicalRateLimitEngineTest {
         RateLimitResult denied = engine.process(ctx, 1, t1);
         assertFalse(denied.isAllowed());
 
-        // Advance time past the window expiry without sleeping
         long waitMillis = Math.max(1L, denied.getRetryAfterMillis() + 1);
         long nextMillis = baseMillis + waitMillis;
         RequestTime t2 = new RequestTime(nextMillis, nextMillis * 1_000_000L);
@@ -255,22 +258,20 @@ class RedisHierarchicalRateLimitEngineTest {
     @Test
     void costIsAppliedToAllLevels() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS));
-        configManager.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER,   new TokenBucketConfig(5,  1, 1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
 
-        RequestContext ctx = RequestContext.builder().userId("h-cost").build();
-
-        assertTrue(engine.process(ctx, 3).isAllowed()); // user: 2 remaining, global: 7 remaining
-        assertFalse(engine.process(ctx, 3).isAllowed()); // user has only 2, needs 3
+        RequestContext ctx = ctx("user");
+        assertTrue(engine.process(ctx, 3).isAllowed());  // user: 2 remaining, global: 7 remaining
+        assertFalse(engine.process(ctx, 3).isAllowed()); // user needs 3, only has 2
     }
 
     @Test
     void concurrentRequestsRespectUserLevelLimit() throws Exception {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new TokenBucketConfig(10, 0, 1, TimeUnit.HOURS)));
+        configureLevel(RateLimitScope.USER, new TokenBucketConfig(10, 0, 1, TimeUnit.HOURS));
 
-        RequestContext ctx = RequestContext.builder().userId("h-concurrent-users").build();
+        RequestContext ctx = ctx("user");
         int threads = 20;
         ExecutorService executor = Executors.newFixedThreadPool(threads);
         AtomicInteger allowed = new AtomicInteger(0);
@@ -278,9 +279,7 @@ class RedisHierarchicalRateLimitEngineTest {
 
         for (int i = 0; i < threads; i++) {
             tasks.add(() -> {
-                if (engine.process(ctx, 1).isAllowed()) {
-                    allowed.incrementAndGet();
-                }
+                if (engine.process(ctx, 1).isAllowed()) allowed.incrementAndGet();
                 return null;
             });
         }
@@ -290,13 +289,12 @@ class RedisHierarchicalRateLimitEngineTest {
         executor.awaitTermination(5, TimeUnit.SECONDS);
         for (Future<Void> f : futures) f.get();
 
-        assertEquals(allowed.get(), 10, "Allowed " + allowed.get() + " out of 10 capacity");
+        assertEquals(10, allowed.get(), "Allowed " + allowed.get() + " out of 10 capacity");
     }
 
     @Test
     void concurrentRequestsFromDifferentUsersDoNotInterfere() throws Exception {
-        configManager.setHierarchyPolicy(policyWith(
-                RateLimitScope.USER, new TokenBucketConfig(5, 0, 1, TimeUnit.HOURS)));
+        configureLevel(RateLimitScope.USER, new TokenBucketConfig(5, 0, 1, TimeUnit.HOURS));
 
         int usersCount = 4;
         int requestsPerUser = 5;
@@ -308,10 +306,7 @@ class RedisHierarchicalRateLimitEngineTest {
             final String userId = "h-multi-user-" + u;
             for (int r = 0; r < requestsPerUser; r++) {
                 tasks.add(() -> {
-                    RequestContext ctx = RequestContext.builder().userId(userId).build();
-                    if (engine.process(ctx, 1).isAllowed()) {
-                        totalAllowed.incrementAndGet();
-                    }
+                    if (engine.process(ctx(userId), 1).isAllowed()) totalAllowed.incrementAndGet();
                     return null;
                 });
             }
@@ -322,13 +317,7 @@ class RedisHierarchicalRateLimitEngineTest {
         executor.awaitTermination(5, TimeUnit.SECONDS);
         for (Future<Void> f : futures) f.get();
 
-        assertEquals(totalAllowed.get(), usersCount * requestsPerUser,
-                "Expected most requests to be allowed across independent users");
-    }
-
-    private HierarchicalRateLimitPolicy policyWith(RateLimitScope scope, RateLimitConfig config) {
-        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(scope, config);
-        return policy;
+        assertEquals(usersCount * requestsPerUser, totalAllowed.get(),
+                "Expected all requests to be allowed across independent users");
     }
 }

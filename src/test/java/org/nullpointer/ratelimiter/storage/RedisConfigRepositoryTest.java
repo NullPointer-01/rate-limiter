@@ -6,12 +6,18 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
+import org.nullpointer.ratelimiter.model.SubscriptionPlan;
 import org.nullpointer.ratelimiter.model.config.*;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
+import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
+import org.nullpointer.ratelimiter.model.state.StateRepositoryType;
+import org.nullpointer.ratelimiter.factory.StateRepositoryFactory;
 import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
 import org.nullpointer.ratelimiter.storage.config.RedisConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.RedisStateRepository;
 import org.nullpointer.ratelimiter.utils.JacksonSerializer;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import java.io.IOException;
@@ -40,7 +46,15 @@ class RedisConfigRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        repository = new RedisConfigRepository(pool, new JacksonSerializer());
+        try (Jedis jedis = pool.getResource()) {
+            jedis.flushAll();
+        }
+        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
+        registry.clearRegistry();
+
+        JacksonSerializer serializer = new JacksonSerializer();
+        repository = new RedisConfigRepository(pool, serializer);
+        registry.register(StateRepositoryType.REDIS, new RedisStateRepository(pool, serializer));
     }
 
     @Test
@@ -141,12 +155,20 @@ class RedisConfigRepositoryTest {
     @Test
     void hierarchyPolicyStoresAndRetrievesWithLevels() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(1000, 100, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.USER, new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS));
+        policy.addLevel(new RateLimitLevel(
+            RateLimitScope.GLOBAL,
+            new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS),
+            StateRepositoryType.IN_MEMORY
+        ));
+        policy.addLevel(new RateLimitLevel(
+            RateLimitScope.USER,
+            new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS),
+            StateRepositoryType.IN_MEMORY
+        ));
 
-        repository.setHierarchyPolicy(policy);
+        repository.setPlanPolicy(SubscriptionPlan.FREE, policy);
+        HierarchicalRateLimitPolicy result = repository.getPlanPolicy(SubscriptionPlan.FREE);
 
-        HierarchicalRateLimitPolicy result = repository.getHierarchyPolicy();
         assertNotNull(result);
         assertEquals(2, result.getLevels().size());
         assertEquals(RateLimitScope.GLOBAL, result.getLevels().get(0).getScope());
@@ -157,39 +179,49 @@ class RedisConfigRepositoryTest {
     void hierarchyPolicyPreservesSortOrder() {
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         // Added in reverse order — addPolicy sorts them
-        policy.addPolicy(RateLimitScope.ENDPOINT, new FixedWindowCounterConfig(10, 1, TimeUnit.SECONDS));
-        policy.addPolicy(RateLimitScope.GLOBAL, new FixedWindowCounterConfig(1000, 1, TimeUnit.MINUTES));
 
-        repository.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(
+            RateLimitScope.ENDPOINT,
+            new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS),
+            StateRepositoryType.IN_MEMORY
+        ));
+        policy.addLevel(new RateLimitLevel(
+            RateLimitScope.GLOBAL,
+            new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS),
+            StateRepositoryType.IN_MEMORY
+        ));
 
-        HierarchicalRateLimitPolicy result = repository.getHierarchyPolicy();
+        repository.setPlanPolicy(SubscriptionPlan.FREE, policy);
+        HierarchicalRateLimitPolicy result = repository.getPlanPolicy(SubscriptionPlan.FREE);
+
+        assertNotNull(result);
         assertEquals(RateLimitScope.GLOBAL, result.getLevels().get(0).getScope());
         assertEquals(RateLimitScope.ENDPOINT, result.getLevels().get(1).getScope());
     }
 
     @Test
-    void scopedConfigStoresDefaultAndOverrideSeparately() {
+    void scopedConfigStoresOverrideSeparately() {
         TokenBucketConfig defaultUserConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         TokenBucketConfig overrideUserConfig = new TokenBucketConfig(25, 5, 1, TimeUnit.SECONDS);
 
-        repository.setScopedConfig(RateLimitScope.USER, "DEFAULT", defaultUserConfig);
-        repository.setScopedConfig(RateLimitScope.USER, "user-1", overrideUserConfig);
+        repository.setPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "DEFAULT", defaultUserConfig);
+        repository.setPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "user-1", overrideUserConfig);
 
-        assertEquals(10.0, ((TokenBucketConfig) repository.getScopedConfig(RateLimitScope.USER, "DEFAULT")).getCapacity(), 0.0001);
-        assertEquals(25.0, ((TokenBucketConfig) repository.getScopedConfig(RateLimitScope.USER, "user-1")).getCapacity(), 0.0001);
+        assertEquals(10.0, ((TokenBucketConfig) repository.getPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "DEFAULT").orElse(null)).getCapacity(), 0.0001);
+        assertEquals(25.0, ((TokenBucketConfig) repository.getPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "user-1").orElse(null)).getCapacity(), 0.0001);
     }
 
     @Test
     void scopedConfigDifferentScopesStoredIndependently() {
-        repository.setScopedConfig(RateLimitScope.TENANT, "acme", new TokenBucketConfig(500, 50, 1, TimeUnit.SECONDS));
-        repository.setScopedConfig(RateLimitScope.IP, "acme", new TokenBucketConfig(20, 2, 1, TimeUnit.SECONDS));
+        repository.setPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.TENANT, "tenant-1", new TokenBucketConfig(500, 50, 1, TimeUnit.SECONDS));
+        repository.setPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.IP, "ip-1", new TokenBucketConfig(20, 2, 1, TimeUnit.SECONDS));
 
-        assertEquals(500.0, ((TokenBucketConfig) repository.getScopedConfig(RateLimitScope.TENANT, "acme")).getCapacity(), 0.0001);
-        assertEquals(20.0, ((TokenBucketConfig) repository.getScopedConfig(RateLimitScope.IP, "acme")).getCapacity(), 0.0001);
+        assertEquals(500.0, ((TokenBucketConfig) repository.getPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.TENANT, "tenant-1").orElse(null)).getCapacity(), 0.0001);
+        assertEquals(20.0, ((TokenBucketConfig) repository.getPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.IP, "ip-1").orElse(null)).getCapacity(), 0.0001);
     }
 
     @Test
     void scopedConfigReturnsNullForUnknownIdentifier() {
-        assertNull(repository.getScopedConfig(RateLimitScope.REGION, "unknownRegion"));
+        assertTrue(repository.getPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.REGION, "unknownRegion").isEmpty());
     }
 }

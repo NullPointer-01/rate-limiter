@@ -46,9 +46,8 @@ public class StateRepositoryFactory {
         registry.put(type, repository);
     }
 
-    public void reinitializeRegistry() {
+    public void clearRegistry() {
         registry.clear();
-        registerDefaults();
     }
 
     public StateRepository resolve(StateRepositoryType type) {

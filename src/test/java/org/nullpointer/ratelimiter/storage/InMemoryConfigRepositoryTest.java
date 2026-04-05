@@ -2,9 +2,12 @@ package org.nullpointer.ratelimiter.storage;
 
 import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
+import org.nullpointer.ratelimiter.model.SubscriptionPlan;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
+import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
+import org.nullpointer.ratelimiter.model.state.StateRepositoryType;
 import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
 import org.nullpointer.ratelimiter.storage.config.InMemoryConfigRepository;
 
@@ -34,16 +37,20 @@ class InMemoryConfigRepositoryTest {
         ConfigRepository store = new InMemoryConfigRepository();
 
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
-        policy.addPolicy(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS));
-        store.setHierarchyPolicy(policy);
+        policy.addLevel(new RateLimitLevel(
+                RateLimitScope.GLOBAL,
+                new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS),
+                StateRepositoryType.IN_MEMORY
+        ));
+        store.setPlanPolicy(SubscriptionPlan.FREE, policy);
 
         TokenBucketConfig defaultUserConfig = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         TokenBucketConfig overrideUserConfig = new TokenBucketConfig(25, 5, 1, TimeUnit.SECONDS);
-        store.setScopedConfig(RateLimitScope.USER, "DEFAULT", defaultUserConfig);
-        store.setScopedConfig(RateLimitScope.USER, "user-1", overrideUserConfig);
+        store.setPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "DEFAULT", defaultUserConfig);
+        store.setPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "user-1", overrideUserConfig);
 
-        assertSame(policy, store.getHierarchyPolicy());
-        assertSame(defaultUserConfig, store.getScopedConfig(RateLimitScope.USER, "DEFAULT"));
-        assertSame(overrideUserConfig, store.getScopedConfig(RateLimitScope.USER, "user-1"));
+        assertSame(policy, store.getPlanPolicy(SubscriptionPlan.FREE));
+        assertSame(defaultUserConfig, store.getPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "DEFAULT").orElse(null));
+        assertSame(overrideUserConfig, store.getPlanScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "user-1").orElse(null));
     }
 }
