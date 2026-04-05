@@ -24,10 +24,6 @@ public class ConfigurationManager {
         this.configRepository.setDefaultConfig(config);
     }
 
-    public RateLimitConfig getDefaultConfig() {
-        return this.configRepository.getDefaultConfig();
-    }
-
     public RateLimitConfig getConfig(RateLimitKey key) {
         RateLimitConfig config = this.configRepository.getOrDefaultConfig(key);
         if (config == null) {

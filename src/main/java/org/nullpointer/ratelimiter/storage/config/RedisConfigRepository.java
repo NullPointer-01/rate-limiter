@@ -1,6 +1,7 @@
 package org.nullpointer.ratelimiter.storage.config;
 
 import org.nullpointer.ratelimiter.model.RateLimitKey;
+import org.nullpointer.ratelimiter.model.SubscriptionPlan;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
@@ -8,12 +9,15 @@ import org.nullpointer.ratelimiter.utils.JacksonSerializer;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
+import java.util.Optional;
+
 public class RedisConfigRepository implements ConfigRepository {
 
     private static final String CONFIG_PREFIX = "rl:config:";
     private static final String DEFAULT_CONFIG_KEY = "rl:config:default";
-    private static final String SCOPED_CONFIG_PREFIX = "rl:sconfig:";
-    private static final String POLICY_KEY = "rl:policy";
+
+    private static final String PLAN_POLICY_PREFIX = "rl:p-policy:";
+    private static final String PLAN_SCOPED_CONFIG_PREFIX = "rl:p-sconfig:";
 
     private final JedisPool jedisPool;
     private final JacksonSerializer serializer;
@@ -70,27 +74,27 @@ public class RedisConfigRepository implements ConfigRepository {
     }
 
     @Override
-    public void setHierarchyPolicy(HierarchicalRateLimitPolicy policy) {
+    public void setPlanPolicy(SubscriptionPlan plan, HierarchicalRateLimitPolicy policy) {
+        String redisKey = PLAN_POLICY_PREFIX + plan.getPlanId();
         String json = serializer.serialize(policy);
         try (Jedis jedis = jedisPool.getResource()) {
-            jedis.set(POLICY_KEY, json);
+            jedis.set(redisKey, json);
         }
     }
 
     @Override
-    public HierarchicalRateLimitPolicy getHierarchyPolicy() {
+    public HierarchicalRateLimitPolicy getPlanPolicy(SubscriptionPlan plan) {
+        String redisKey = PLAN_POLICY_PREFIX + plan.getPlanId();
         try (Jedis jedis = jedisPool.getResource()) {
-            String json = jedis.get(POLICY_KEY);
-            if (json == null) {
-                return null;
-            }
+            String json = jedis.get(redisKey);
+            if (json == null) return null;
             return serializer.deserialize(json, HierarchicalRateLimitPolicy.class);
         }
     }
 
     @Override
-    public void setScopedConfig(RateLimitScope scope, String identifier, RateLimitConfig config) {
-        String redisKey = toScopedConfigKey(scope, identifier);
+    public void setPlanScopedConfig(SubscriptionPlan plan, RateLimitScope scope, String identifier, RateLimitConfig config) {
+        String redisKey = toPlanScopedKey(plan, scope, identifier);
         String json = serializer.serialize(config);
         try (Jedis jedis = jedisPool.getResource()) {
             jedis.set(redisKey, json);
@@ -98,18 +102,16 @@ public class RedisConfigRepository implements ConfigRepository {
     }
 
     @Override
-    public RateLimitConfig getScopedConfig(RateLimitScope scope, String identifier) {
-        String redisKey = toScopedConfigKey(scope, identifier);
+    public Optional<RateLimitConfig> getPlanScopedConfig(SubscriptionPlan plan, RateLimitScope scope, String identifier) {
+        String redisKey = toPlanScopedKey(plan, scope, identifier);
         try (Jedis jedis = jedisPool.getResource()) {
             String json = jedis.get(redisKey);
-            if (json == null) {
-                return null;
-            }
-            return serializer.deserialize(json, RateLimitConfig.class);
+            if (json == null) return Optional.empty();
+            return Optional.of(serializer.deserialize(json, RateLimitConfig.class));
         }
     }
 
-    private String toScopedConfigKey(RateLimitScope scope, String identifier) {
-        return SCOPED_CONFIG_PREFIX + scope.getPrefix() + ":" + identifier;
+    private String toPlanScopedKey(SubscriptionPlan plan, RateLimitScope scope, String identifier) {
+        return PLAN_SCOPED_CONFIG_PREFIX + plan.getPlanId() + ":" + scope.getPrefix() + ":" + identifier;
     }
 }

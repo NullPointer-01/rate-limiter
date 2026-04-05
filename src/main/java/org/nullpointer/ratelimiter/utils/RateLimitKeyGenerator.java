@@ -8,8 +8,9 @@ import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 public class RateLimitKeyGenerator {
 
     public RateLimitKey generate(RateLimitScope scope, RequestContext context) {
+        String planPrefix = context.getPlan().getPlanId();
         String identifier = extractIdentifier(scope, context);
-        return new RateLimitKey(scope.getPrefix() + ":" + identifier);
+        return new RateLimitKey(planPrefix + ":" + scope.getPrefix() + ":" + identifier);
     }
 
     // Should match with HierarchicalConfigurationManager.extractIdentifier()

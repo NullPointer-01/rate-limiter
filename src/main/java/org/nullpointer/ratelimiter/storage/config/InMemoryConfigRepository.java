@@ -1,23 +1,26 @@
 package org.nullpointer.ratelimiter.storage.config;
 
 import org.nullpointer.ratelimiter.model.RateLimitKey;
+import org.nullpointer.ratelimiter.model.SubscriptionPlan;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class InMemoryConfigRepository implements ConfigRepository {
 	private final Map<String, RateLimitConfig> configMap;
-	private final Map<String, RateLimitConfig> scopedConfigMap;
+	private final Map<String, HierarchicalRateLimitPolicy> planPolicyMap;
+	private final Map<String, RateLimitConfig> planScopedConfigMap;
 
 	private RateLimitConfig defaultConfig;
-	private HierarchicalRateLimitPolicy hierarchyPolicy;
 
 	public InMemoryConfigRepository() {
 		this.configMap = new ConcurrentHashMap<>();
-		this.scopedConfigMap = new ConcurrentHashMap<>();
+		this.planPolicyMap = new ConcurrentHashMap<>();
+		this.planScopedConfigMap = new ConcurrentHashMap<>();
 	}
 
 	@Override
@@ -46,26 +49,26 @@ public class InMemoryConfigRepository implements ConfigRepository {
 	}
 
 	@Override
-	public void setHierarchyPolicy(HierarchicalRateLimitPolicy policy) {
-		this.hierarchyPolicy = policy;
+	public void setPlanPolicy(SubscriptionPlan plan, HierarchicalRateLimitPolicy policy) {
+		this.planPolicyMap.put(plan.getPlanId(), policy);
 	}
 
 	@Override
-	public HierarchicalRateLimitPolicy getHierarchyPolicy() {
-		return this.hierarchyPolicy;
+	public HierarchicalRateLimitPolicy getPlanPolicy(SubscriptionPlan plan) {
+		return planPolicyMap.get(plan.getPlanId());
 	}
 
 	@Override
-	public void setScopedConfig(RateLimitScope scope, String identifier, RateLimitConfig config) {
-		this.scopedConfigMap.put(toScopedConfigKey(scope, identifier), config);
+	public void setPlanScopedConfig(SubscriptionPlan plan, RateLimitScope scope, String identifier, RateLimitConfig config) {
+		this.planScopedConfigMap.put(toPlanScopedKey(plan, scope, identifier), config);
 	}
 
 	@Override
-	public RateLimitConfig getScopedConfig(RateLimitScope scope, String identifier) {
-		return this.scopedConfigMap.get(toScopedConfigKey(scope, identifier));
+	public Optional<RateLimitConfig> getPlanScopedConfig(SubscriptionPlan plan, RateLimitScope scope, String identifier) {
+		return Optional.ofNullable(planScopedConfigMap.get(toPlanScopedKey(plan, scope, identifier)));
 	}
 
-	private String toScopedConfigKey(RateLimitScope scope, String identifier) {
-		return scope.getPrefix() + ":" + identifier;
+	private String toPlanScopedKey(SubscriptionPlan plan, RateLimitScope scope, String identifier) {
+		return plan.getPlanId() + ":" + scope.getPrefix() + ":" + identifier;
 	}
 }
