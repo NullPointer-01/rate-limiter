@@ -11,5 +11,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = SlidingWindowCounterState.class, name = "sliding_window_counter")
 })
 public interface RateLimitState {
-
+    /**
+     * Returns a deep copy of this state object.
+     */
+    RateLimitState copy();
 }

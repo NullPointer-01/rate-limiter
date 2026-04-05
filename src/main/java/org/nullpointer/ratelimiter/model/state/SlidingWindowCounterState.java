@@ -62,4 +62,11 @@ public class SlidingWindowCounterState implements RateLimitState {
     protected void setWindows(Map<Long, Long> windows) {
         this.windows.putAll(windows);
     }
+
+    @Override
+    public RateLimitState copy() {
+        SlidingWindowCounterState copy = new SlidingWindowCounterState(this.originNanos);
+        copy.windows.putAll(this.windows);
+        return copy;
+    }
 }

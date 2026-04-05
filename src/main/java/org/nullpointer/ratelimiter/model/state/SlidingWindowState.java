@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
@@ -69,6 +70,11 @@ public class SlidingWindowState implements RateLimitState {
         }
 
         return nowNanos + windowSizeNanos; // After full window expires
+    }
+
+    @Override
+    public RateLimitState copy() {
+        return new SlidingWindowState(this.currentWindowCost, new ArrayList<>(this.deque));
     }
 
     static class Request {

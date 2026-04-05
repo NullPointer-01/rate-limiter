@@ -27,4 +27,9 @@ public class TokenBucketState implements RateLimitState {
     public void setLastRefillNanos(long lastRefillNanos) {
         this.lastRefillNanos = lastRefillNanos;
     }
+
+    @Override
+    public RateLimitState copy() {
+        return new TokenBucketState(this.availableTokens, this.lastRefillNanos);
+    }
 }

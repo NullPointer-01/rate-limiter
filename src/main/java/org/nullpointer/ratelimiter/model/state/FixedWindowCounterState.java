@@ -49,4 +49,11 @@ public class FixedWindowCounterState implements RateLimitState {
             windows.remove(minWindowId);
         }
     }
+
+    @Override
+    public RateLimitState copy() {
+        FixedWindowCounterState copy = new FixedWindowCounterState();
+        copy.windows.putAll(this.windows);
+        return copy;
+    }
 }
