@@ -25,8 +25,12 @@ import org.nullpointer.ratelimiter.utils.TimeSource;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class HierarchicalRateLimitEngine {
+    private static final Logger logger = Logger.getLogger(HierarchicalRateLimitEngine.class.getName());
+
     private final HierarchicalConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimitKeyGenerator keyGenerator;
@@ -93,6 +97,7 @@ public class HierarchicalRateLimitEngine {
             cb.recordSuccess();
             return lastResult; // Should never be null
         } catch (Exception ex) {
+            logger.log(Level.SEVERE, "Error during atomic rate limiting : ", ex);
             metrics.logError();
             cb.recordError();
             return cb.getFallbackResult();
@@ -157,9 +162,8 @@ public class HierarchicalRateLimitEngine {
             cb.recordSuccess();
 
             return lastResult; // Should never be null
-        } catch (RateLimitConfigNotFoundException ex) {
-            throw ex;
         } catch (Exception ex) {
+            logger.log(Level.SEVERE, "Error during rate limiting : ", ex);
             metrics.logError();
             cb.recordError();
             return cb.getFallbackResult();

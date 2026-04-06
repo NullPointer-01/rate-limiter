@@ -15,8 +15,12 @@ import org.nullpointer.ratelimiter.utils.TimeSource;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class RateLimitEngine {
+    private static final Logger logger = Logger.getLogger(RateLimitEngine.class.getName());
+
     private final ConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimiterMetrics metrics;
@@ -78,6 +82,7 @@ public class RateLimitEngine {
             cb.recordSuccess();
             return result;
         } catch (Exception ex) {
+            logger.log(Level.SEVERE, "Error during atomic rate limiting : ", ex);
             metrics.logError();
             cb.recordError();
             return cb.getFallbackResult();
