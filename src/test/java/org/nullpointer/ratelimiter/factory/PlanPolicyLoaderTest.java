@@ -1,7 +1,7 @@
 package org.nullpointer.ratelimiter.factory;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.nullpointer.ratelimiter.model.SubscriptionPlan;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
@@ -13,20 +13,39 @@ import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.utils.PlanPolicyLoader;
 
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlanPolicyLoaderTest {
 
-    private PlanPolicyLoader factory;
-
-    @BeforeEach
-    void setUp() {
-        factory = PlanPolicyLoader.getInstance();
+    static Stream<String> configFiles() {
+        return Stream.of(
+                "rate-limiter-test-single-plan.yml",
+                "rate-limiter-test-single-plan-atomic.yml",
+                "rate-limiter-test-defaults.yml",
+                "rate-limiter-test-defaults-atomic.yml"
+        );
     }
 
-    @Test
-    void loadsAllThreePlans() {
+    static Stream<String> multiPlanConfigFiles() {
+        return Stream.of(
+                "rate-limiter-test-defaults.yml",
+                "rate-limiter-test-defaults-atomic.yml"
+        );
+    }
+
+    static Stream<String> singlePlanConfigFiles() {
+        return Stream.of(
+                "rate-limiter-test-single-plan.yml",
+                "rate-limiter-test-single-plan-atomic.yml"
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void loadsAllThreePlans(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         Map<SubscriptionPlan, HierarchicalRateLimitPolicy> policies = factory.getDefaultPolicies();
         assertEquals(3, policies.size());
         assertTrue(policies.containsKey(SubscriptionPlan.FREE));
@@ -34,24 +53,19 @@ class PlanPolicyLoaderTest {
         assertTrue(policies.containsKey(SubscriptionPlan.ENTERPRISE));
     }
 
-    @Test
-    void freePlanHasFourLevels() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void freePlanHasFourLevels(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
         assertNotNull(policy);
         assertEquals(4, policy.getLevels().size());
     }
 
-    @Test
-    void freePlanLevelsAreOrderedByScope() {
-        HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
-        var levels = policy.getLevels();
-        for (int i = 1; i < levels.size(); i++) {
-            assertTrue(levels.get(i - 1).getScope().getOrder() < levels.get(i).getScope().getOrder());
-        }
-    }
-
-    @Test
-    void freePlanGlobalLevelUsesFixedWindowCounter() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void freePlanGlobalLevelUsesFixedWindowCounter(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
         RateLimitLevel globalLevel = policy.getLevel(RateLimitScope.REGION).orElseThrow();
         RateLimitConfig config = globalLevel.getConfig();
@@ -61,22 +75,28 @@ class PlanPolicyLoaderTest {
         assertEquals(60000, fwc.getWindowSizeMillis());
     }
 
-    @Test
-    void freePlanTenantLevelUsesTokenBucket() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void freePlanTenantLevelUsesTokenBucket(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
         RateLimitLevel tenantLevel = policy.getLevel(RateLimitScope.TENANT).orElseThrow();
         assertInstanceOf(TokenBucketConfig.class, tenantLevel.getConfig());
     }
 
-    @Test
-    void freePlanUserLevelUsesSlidingWindowCounter() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void freePlanUserLevelUsesSlidingWindowCounter(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
         RateLimitLevel userLevel = policy.getLevel(RateLimitScope.USER).orElseThrow();
         assertInstanceOf(SlidingWindowCounterConfig.class, userLevel.getConfig());
     }
 
-    @Test
-    void premiumPlanHasHigherLimits() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void premiumPlanHasHigherLimits(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         HierarchicalRateLimitPolicy free = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
         HierarchicalRateLimitPolicy premium = factory.getDefaultPolicies().get(SubscriptionPlan.PREMIUM);
 
@@ -88,8 +108,10 @@ class PlanPolicyLoaderTest {
         assertTrue(premiumGlobal.getCapacity() > freeGlobal.getCapacity());
     }
 
-    @Test
-    void enterprisePlanHasHighestLimits() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void enterprisePlanHasHighestLimits(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         HierarchicalRateLimitPolicy premium = factory.getDefaultPolicies().get(SubscriptionPlan.PREMIUM);
         HierarchicalRateLimitPolicy enterprise = factory.getDefaultPolicies().get(SubscriptionPlan.ENTERPRISE);
 
@@ -101,11 +123,13 @@ class PlanPolicyLoaderTest {
         assertTrue(enterpriseGlobal.getCapacity() > premiumGlobal.getCapacity());
     }
 
-    @Test
-    void allLevelsHaveStateRepositoryTypeResolved() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void allLevelsHaveStateRepositoryTypeResolved(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
         for (SubscriptionPlan plan : SubscriptionPlan.values()) {
             HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(plan);
-            assertNotNull(policy);
+            assertNotNull(policy, plan + " policy should not be null");
             for (RateLimitLevel level : policy.getLevels()) {
                 assertNotNull(level.getStateRepositoryType(),
                         plan + "/" + level.getScope() + " should have a StateRepositoryType");
@@ -113,20 +137,79 @@ class PlanPolicyLoaderTest {
         }
     }
 
-    @Test
-    void nullConfigPathThrows() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("singlePlanConfigFiles")
+    void singlePlanLoadsOnlyFreePlan(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
+        Map<SubscriptionPlan, HierarchicalRateLimitPolicy> policies = factory.getDefaultPolicies();
+        assertEquals(1, policies.size());
+        assertTrue(policies.containsKey(SubscriptionPlan.FREE));
+        assertNull(policies.get(SubscriptionPlan.PREMIUM));
+        assertNull(policies.get(SubscriptionPlan.ENTERPRISE));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("singlePlanConfigFiles")
+    void singlePlanFreePlanHasOneLevel(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
+        HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
+        assertNotNull(policy);
+        assertEquals(1, policy.getLevels().size());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("singlePlanConfigFiles")
+    void singlePlanFreePlanUserLevelUsesTokenBucket(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
+        HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
+        RateLimitLevel userLevel = policy.getLevel(RateLimitScope.USER).orElseThrow();
+        assertInstanceOf(TokenBucketConfig.class, userLevel.getConfig());
+        TokenBucketConfig tbc = (TokenBucketConfig) userLevel.getConfig();
+        assertEquals(10, tbc.getCapacity());
+        assertEquals(1, tbc.getRefillTokens());
+        assertEquals(1000, tbc.getRefillIntervalMillis());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("singlePlanConfigFiles")
+    void singlePlanAllLevelsHaveStateRepositoryTypeResolved(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
+        HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
+        assertNotNull(policy);
+        for (RateLimitLevel level : policy.getLevels()) {
+            assertNotNull(level.getStateRepositoryType(),
+                    "FREE/" + level.getScope() + " should have a StateRepositoryType");
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("singlePlanConfigFiles")
+    void unknownPlanReturnsNullAfterLoad(String configFile) {
+        PlanPolicyLoader f = PlanPolicyLoader.withConfig(configFile);
+        assertNull(f.getDefaultPolicies().get(SubscriptionPlan.ENTERPRISE));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void freePlanLevelsAreOrderedByScope(String configFile) {
+        PlanPolicyLoader factory = PlanPolicyLoader.withConfig(configFile);
+        HierarchicalRateLimitPolicy policy = factory.getDefaultPolicies().get(SubscriptionPlan.FREE);
+        var levels = policy.getLevels();
+        for (int i = 1; i < levels.size(); i++) {
+            assertTrue(levels.get(i - 1).getScope().getOrder() < levels.get(i).getScope().getOrder());
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void nullConfigPathThrows(String configFile) {
         assertThrows(IllegalArgumentException.class, () -> PlanPolicyLoader.withConfig(null));
     }
 
-    @Test
-    void missingConfigFileThrows() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void missingConfigFileThrows(String configFile) {
         assertThrows(IllegalStateException.class,
                 () -> PlanPolicyLoader.withConfig("nonexistent.yml"));
-    }
-
-    @Test
-    void unknownPlanReturnsNullAfterLoad() {
-        PlanPolicyLoader f = PlanPolicyLoader.withConfig("rate-limiter-test-single-plan.yml");
-        assertNull(f.getDefaultPolicies().get(SubscriptionPlan.ENTERPRISE));
     }
 }

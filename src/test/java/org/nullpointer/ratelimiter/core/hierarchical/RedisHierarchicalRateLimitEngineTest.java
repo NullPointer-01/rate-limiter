@@ -70,7 +70,7 @@ class RedisHierarchicalRateLimitEngineTest {
         configManager = new HierarchicalConfigurationManager(
                 new RedisConfigRepository(pool, serializer),
                 stateRepo,
-                PlanPolicyLoader.getInstance(),
+                PlanPolicyLoader.withConfig("rate-limiter-test-single-plan.yml"),
                 registry
         );
         engine = new HierarchicalRateLimitEngine(configManager);

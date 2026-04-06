@@ -1,0 +1,87 @@
+plans:
+  free:
+    levels:
+      - scope: REGION
+        config:
+          type: fixed_window_counter
+          capacity: 10000
+          windowSizeMillis: 60000
+        stateRepositoryType: REDIS
+      - scope: TENANT
+        config:
+          type: token_bucket
+          capacity: 1000
+          refillTokens: 100
+          refillIntervalMillis: 1000
+        stateRepositoryType: REDIS
+      - scope: USER
+        config:
+          type: sliding_window_counter
+          capacity: 100
+          windowSizeMillis: 60000
+        stateRepositoryType: ASYNC_REDIS
+      - scope: ENDPOINT
+        config:
+          type: token_bucket
+          capacity: 20
+          refillTokens: 5
+          refillIntervalMillis: 1000
+        stateRepositoryType: IN_MEMORY
+  premium:
+    levels:
+      - scope: REGION
+        config:
+          type: fixed_window_counter
+          capacity: 50000
+          windowSizeMillis: 60000
+        stateRepositoryType: REDIS
+      - scope: TENANT
+        config:
+          type: token_bucket
+          capacity: 5000
+          refillTokens: 500
+          refillIntervalMillis: 1000
+        stateRepositoryType: REDIS
+      - scope: USER
+        config:
+          type: token_bucket
+          capacity: 500
+          refillTokens: 50
+          refillIntervalMillis: 1000
+        stateRepositoryType: ASYNC_REDIS
+      - scope: ENDPOINT
+        config:
+          type: token_bucket
+          capacity: 50
+          refillTokens: 10
+          refillIntervalMillis: 1000
+        stateRepositoryType: IN_MEMORY
+  enterprise:
+    levels:
+      - scope: REGION
+        config:
+          type: fixed_window_counter
+          capacity: 200000
+          windowSizeMillis: 60000
+        stateRepositoryType: REDIS
+      - scope: TENANT
+        config:
+          type: token_bucket
+          capacity: 50000
+          refillTokens: 5000
+          refillIntervalMillis: 1000
+        stateRepositoryType: REDIS
+      - scope: USER
+        config:
+          type: token_bucket
+          capacity: 2000
+          refillTokens: 200
+          refillIntervalMillis: 1000
+        stateRepositoryType: ASYNC_REDIS
+      - scope: ENDPOINT
+        config:
+          type: token_bucket
+          capacity: 200
+          refillTokens: 50
+          refillIntervalMillis: 1000
+        stateRepositoryType: IN_MEMORY

@@ -5,17 +5,24 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.storage.state.AsyncRedisStateRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryAtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
 import org.nullpointer.ratelimiter.storage.state.RedisStateRepository;
 import org.nullpointer.ratelimiter.utils.JacksonSerializer;
 import org.nullpointer.ratelimiter.utils.PlanPolicyLoader;
+
+import java.util.stream.Stream;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.SubscriptionPlan;
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
+import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
+import org.nullpointer.ratelimiter.model.config.SlidingWindowConfig;
+import org.nullpointer.ratelimiter.model.config.SlidingWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.TokenBucketConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
@@ -37,8 +44,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class HierarchicalRateLimitEngineTest {
     private static RedisServer mockServer;
     private static JedisPool pool;
-    private static PlanPolicyLoader planFactory;
 
+    private StateRepositoryFactory registry;
+    private PlanPolicyLoader planFactory;
     private HierarchicalConfigurationManager configManager;
     private HierarchicalRateLimitEngine engine;
     private AsyncRedisStateRepository asyncRedisRepo;
@@ -47,7 +55,6 @@ class HierarchicalRateLimitEngineTest {
     static void startServer() throws IOException {
         mockServer = RedisServer.newRedisServer().start();
         pool = new JedisPool("localhost", mockServer.getBindPort());
-        planFactory = PlanPolicyLoader.getInstance();
     }
 
     @AfterAll
@@ -63,7 +70,7 @@ class HierarchicalRateLimitEngineTest {
             jedis.flushAll();
         }
 
-        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
+        registry = StateRepositoryFactory.getInstance();
         registry.clearRegistry();
 
         JacksonSerializer serializer = new JacksonSerializer();
@@ -73,10 +80,29 @@ class HierarchicalRateLimitEngineTest {
         registry.register(StateRepositoryType.IN_MEMORY, new InMemoryStateRepository());
         registry.register(StateRepositoryType.REDIS, new RedisStateRepository(pool, serializer));
         registry.register(StateRepositoryType.ASYNC_REDIS, asyncRedisRepo);
+        registry.registerAtomic(StateRepositoryType.IN_MEMORY_ATOMIC, new InMemoryAtomicStateRepository());
+    }
 
+    static Stream<String> configFiles() {
+        return Stream.of(
+            "rate-limiter-test-single-plan.yml",
+                "rate-limiter-test-single-plan-atomic.yml",
+                "rate-limiter-test-defaults.yml",
+                "rate-limiter-test-defaults-atomic.yml"
+        );
+    }
+
+    static Stream<String> multiPlanConfigFiles() {
+        return Stream.of(
+            "rate-limiter-test-defaults.yml",
+            "rate-limiter-test-defaults-atomic.yml"
+        );
+    }
+
+    private void buildSetup(String configFile) {
+        planFactory = PlanPolicyLoader.withConfig(configFile);
         ConfigRepository configStore = new InMemoryConfigRepository();
         StateRepository stateStore = new RedisStateRepository(pool, new JacksonSerializer());
-
         configManager = new HierarchicalConfigurationManager(configStore, stateStore, planFactory, registry);
         engine = new HierarchicalRateLimitEngine(configManager);
     }
@@ -88,8 +114,10 @@ class HierarchicalRateLimitEngineTest {
         }
     }
 
-    @Test
-    void singleLevelAllowsWithinLimit() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void singleLevelAllowsWithinLimit(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.REDIS));
@@ -98,8 +126,10 @@ class HierarchicalRateLimitEngineTest {
         assertTrue(engine.process(ctx("user1"), 1).isAllowed());
     }
 
-    @Test
-    void singleLevelDeniesWhenExhausted() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void singleLevelDeniesWhenExhausted(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.IN_MEMORY));
@@ -111,8 +141,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed());
     }
 
-    @Test
-    void multiLevelAllowsWhenAllLevelsPermit() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void multiLevelAllowsWhenAllLevelsPermit(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(50,  5,  1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -122,8 +154,10 @@ class HierarchicalRateLimitEngineTest {
         assertTrue(engine.process(ctx("user1", "/api/data"), 1).isAllowed());
     }
 
-    @Test
-    void multiLevelDeniesWhenMostRestrictiveLevelExhausted() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void multiLevelDeniesWhenMostRestrictiveLevelExhausted(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.ENDPOINT, new TokenBucketConfig(3,   1,  1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -136,8 +170,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed()); // endpoint exhausted
     }
 
-    @Test
-    void multiLevelDeniesWhenGlobalLevelExhausted() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void multiLevelDeniesWhenGlobalLevelExhausted(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(2,   1, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.ENDPOINT, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -149,8 +185,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed()); // global exhausted
     }
 
-    @Test
-    void costIsAppliedToAllLevels() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void costIsAppliedToAllLevels(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(5,  1, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -161,8 +199,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 3).isAllowed()); // user has only 2, needs 3
     }
 
-    @Test
-    void stateIsInitializedOnFirstRequest() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void stateIsInitializedOnFirstRequest(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.IN_MEMORY));
@@ -179,8 +219,10 @@ class HierarchicalRateLimitEngineTest {
         assertNotNull(inMemoryRepo.getHierarchicalState(stateKey));
     }
 
-    @Test
-    void separateKeysHaveIndependentState() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void separateKeysHaveIndependentState(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.ASYNC_REDIS));
@@ -198,8 +240,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(user2, 1).isAllowed());
     }
 
-    @Test
-    void sharedLevelStateAcrossDifferentRequests() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void sharedLevelStateAcrossDifferentRequests(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(3,  1,  1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(10, 10, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -214,8 +258,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(user2, 1).isAllowed()); // global exhausted
     }
 
-    @Test
-    void multiAlgorithmLevels() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void multiAlgorithmLevels(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS),           StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.ENDPOINT, new FixedWindowCounterConfig(5, 1, TimeUnit.MINUTES), StateRepositoryType.IN_MEMORY));
@@ -229,8 +275,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed()); // FixedWindowCounter exhausted
     }
 
-    @Test
-    void multiLevelHierarchyEnforcement() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void multiLevelHierarchyEnforcement(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(1000, 100, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(100,  10,  1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -245,8 +293,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed()); // endpoint is bottleneck
     }
 
-    @Test
-    void middleLevelDeniesWhileOthersAllow() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void middleLevelDeniesWhileOthersAllow(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(2,   1,  1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY)); // bottleneck
@@ -260,8 +310,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed()); // denied by USER level
     }
 
-    @Test
-    void noPhantomConsumptionWhenLaterLevelDenies() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void noPhantomConsumptionWhenLaterLevelDenies(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig globalCfg   = new TokenBucketConfig(5, 1, 10, TimeUnit.SECONDS);
         TokenBucketConfig endpointCfg = new TokenBucketConfig(2, 1, 10, TimeUnit.SECONDS);
 
@@ -288,8 +340,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed());
     }
 
-    @Test
-    void noPhantomConsumptionOnFirstLevelWhenSecondDenies() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void noPhantomConsumptionOnFirstLevelWhenSecondDenies(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig globalCfg = new TokenBucketConfig(10, 1, 10, TimeUnit.SECONDS);
         TokenBucketConfig userCfg   = new TokenBucketConfig(1,  1, 10, TimeUnit.SECONDS);
 
@@ -318,23 +372,30 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed());
     }
 
-    @Test
-    void defaultFreePolicyAllowsInitialRequest() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void defaultFreePolicyAllowsInitialRequest(String configFile) {
+        buildSetup(configFile);
         assertTrue(engine.process(ctx("user1", "tenant-a", "/api/data"), 1).isAllowed());
     }
 
-    @Test
-    void defaultFreePolicyEndpointLevelDeniesAfterCapacity() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void defaultFreePolicyEndpointLevelDeniesAfterCapacity(String configFile) {
+        buildSetup(configFile);
         RequestContext ctx = ctx("user1", "tenant-a", "/api/data");
+        int cap = minFreeCapacity();
 
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < cap; i++) {
             assertTrue(engine.process(ctx, 1).isAllowed(), "Request " + (i + 1) + " should be allowed");
         }
-        assertFalse(engine.process(ctx, 1).isAllowed(), "21st request should be denied by ENDPOINT level");
+        assertFalse(engine.process(ctx, 1).isAllowed(), "Request " + (cap + 1) + " should be denied by ENDPOINT level");
     }
 
-    @Test
-    void defaultFreePolicyUsersHaveIndependentAsyncRedisQuota() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void defaultFreePolicyUsersHaveIndependentAsyncRedisQuota(String configFile) {
+        buildSetup(configFile);
         // USER level uses ASYNC_REDIS – each user has its own sliding-window state.
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS), StateRepositoryType.ASYNC_REDIS));
@@ -353,8 +414,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(user2, 1).isAllowed()); // user2 exhausted
     }
 
-    @Test
-    void redisBackedSingleUserLevelDeniesWhenExhausted() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void redisBackedSingleUserLevelDeniesWhenExhausted(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.REDIS));
@@ -366,8 +429,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed());
     }
 
-    @Test
-    void redisBackedMultiLevelGlobalDeniesIndependentOfPerUser() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void redisBackedMultiLevelGlobalDeniesIndependentOfPerUser(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL, new TokenBucketConfig(2, 1, 1, TimeUnit.SECONDS), StateRepositoryType.REDIS));
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new TokenBucketConfig(10, 5, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -378,8 +443,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(ctx("user3"), 1).isAllowed()); // global exhausted
     }
 
-    @Test
-    void asyncRedisBackedSingleUserLevelAllowsWithinLimit() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void asyncRedisBackedSingleUserLevelAllowsWithinLimit(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.ASYNC_REDIS));
@@ -389,8 +456,10 @@ class HierarchicalRateLimitEngineTest {
         assertTrue(engine.process(ctx("user1"), 1).isAllowed());
     }
 
-    @Test
-    void asyncRedisBackedSingleUserLevelDeniesWhenExhausted() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void asyncRedisBackedSingleUserLevelDeniesWhenExhausted(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(3, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.ASYNC_REDIS));
@@ -402,8 +471,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(context, 1).isAllowed());
     }
 
-    @Test
-    void asyncRedisBackedStateFlushedToRedisAfterSync() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void asyncRedisBackedStateFlushedToRedisAfterSync(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig cfg = new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.ASYNC_REDIS));
@@ -424,8 +495,10 @@ class HierarchicalRateLimitEngineTest {
                 "State should have been flushed from AsyncRedis local cache into Redis");
     }
 
-    @Test
-    void factoryDefaultPolicyUsedWhenNoRepoOverride() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void factoryDefaultPolicyUsedWhenNoRepoOverride(String configFile) {
+        buildSetup(configFile);
         RequestContext ctx = RequestContext.builder()
                 .plan(SubscriptionPlan.FREE)
                 .tenantId("t1")
@@ -437,8 +510,10 @@ class HierarchicalRateLimitEngineTest {
         assertTrue(result.isAllowed());
     }
 
-    @Test
-    void repoPolicyTakesPriorityOverFactoryDefault() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void repoPolicyTakesPriorityOverFactoryDefault(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig strictCfg = new TokenBucketConfig(1, 1, 10, TimeUnit.SECONDS);
         HierarchicalRateLimitPolicy repoPolicy = new HierarchicalRateLimitPolicy();
         repoPolicy.addLevel(new RateLimitLevel(RateLimitScope.USER, strictCfg, StateRepositoryType.IN_MEMORY));
@@ -453,8 +528,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(ctx, 1).isAllowed());
     }
 
-    @Test
-    void scopeConfigOverrideAppliedForSpecificUser() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void scopeConfigOverrideAppliedForSpecificUser(String configFile) {
+        buildSetup(configFile);
         TokenBucketConfig overrideCfg = new TokenBucketConfig(2, 1, 10, TimeUnit.SECONDS);
         configManager.overrideScopedConfig(SubscriptionPlan.FREE, RateLimitScope.USER, "vip-user", overrideCfg);
 
@@ -470,8 +547,10 @@ class HierarchicalRateLimitEngineTest {
         assertFalse(engine.process(vipCtx, 1).isAllowed());
     }
 
-    @Test
-    void differentPlansGetDifferentLimitsFromFactory() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void differentPlansGetDifferentLimitsFromFactory(String configFile) {
+        buildSetup(configFile);
         RequestContext freeCtx = RequestContext.builder()
                 .plan(SubscriptionPlan.FREE)
                 .tenantId("t1")
@@ -486,19 +565,23 @@ class HierarchicalRateLimitEngineTest {
                 .apiPath("/api/test")
                 .build();
 
-        for (int i = 0; i < 20; i++) {
+        int cap = minFreeCapacity();
+
+        for (int i = 0; i < cap; i++) {
             engine.process(freeCtx, 1);
         }
         assertFalse(engine.process(freeCtx, 1).isAllowed());
 
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < cap; i++) {
             RateLimitResult result = engine.process(enterpriseCtx, 1);
             assertTrue(result.isAllowed());
         }
     }
 
-    @Test
-    void pipelineDeniesIfAnyLevelDenies() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multiPlanConfigFiles")
+    void pipelineDeniesIfAnyLevelDenies(String configFile) {
+        buildSetup(configFile);
         RequestContext ctx = RequestContext.builder()
                 .plan(SubscriptionPlan.FREE)
                 .tenantId("t1")
@@ -510,15 +593,17 @@ class HierarchicalRateLimitEngineTest {
         assertNotNull(policy);
         assertTrue(policy.getLevels().size() > 1);
 
-        int endpointCapacity = 20;
-        for (int i = 0; i < endpointCapacity; i++) {
+        int cap = minFreeCapacity();
+        for (int i = 0; i < cap; i++) {
             assertTrue(engine.process(ctx, 1).isAllowed(), "Request " + (i + 1) + " should be allowed");
         }
         assertFalse(engine.process(ctx, 1).isAllowed());
     }
 
-    @Test
-    void resolutionOrderFactoryThenRepoOverride() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void resolutionOrderFactoryThenRepoOverride(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy factoryPolicy = configManager.resolvePolicy(
                 RequestContext.builder().plan(SubscriptionPlan.FREE).userId("u1").tenantId("t1").apiPath("/x").build());
         assertNotNull(factoryPolicy);
@@ -535,8 +620,10 @@ class HierarchicalRateLimitEngineTest {
         assertEquals(overrideCfg.getCapacity(), resolvedCfg.getCapacity(), 0.0001);
     }
 
-    @Test
-    void resolveStateRepositoryUsesLevelDirectRepoWhenSet() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void resolveStateRepositoryUsesLevelDirectRepoWhenSet(String configFile) {
+        buildSetup(configFile);
         StateRepository directRepo = new InMemoryStateRepository();
         StateRepositoryFactory.getInstance().register(StateRepositoryType.IN_MEMORY, directRepo);
 
@@ -545,6 +632,30 @@ class HierarchicalRateLimitEngineTest {
 
         StateRepository resolved = configManager.resolveStateRepository(level);
         assertSame(directRepo, resolved);
+    }
+
+    private int minFreeCapacity() {
+        HierarchicalRateLimitPolicy policy = planFactory.getDefaultPolicies().get(SubscriptionPlan.FREE);
+        return policy.getLevels().stream()
+                .mapToInt(level -> (int) capacityOf(level.getConfig()))
+                .min()
+                .orElseThrow(() -> new IllegalStateException("No levels in FREE policy"));
+    }
+
+    private long capacityOf(RateLimitConfig config) {
+        if (config instanceof TokenBucketConfig c) {
+            return (long) c.getCapacity();
+        }
+        if (config instanceof FixedWindowCounterConfig c) {
+            return c.getCapacity();
+        }
+        if (config instanceof SlidingWindowCounterConfig c) {
+            return c.getCapacity();
+        }
+        if (config instanceof SlidingWindowConfig c) {
+            return c.getMaxCost();
+        }
+        throw new IllegalArgumentException("Unknown RateLimitConfig type: " + config.getClass().getSimpleName());
     }
 
     private RequestContext ctx(String userId) {

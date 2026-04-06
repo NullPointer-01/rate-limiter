@@ -4,10 +4,13 @@ import com.github.fppt.jedismock.RedisServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.nullpointer.ratelimiter.storage.config.RedisConfigRepository;
 import org.nullpointer.ratelimiter.utils.JacksonSerializer;
 import org.nullpointer.ratelimiter.utils.PlanPolicyLoader;
+
+import java.util.stream.Stream;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.SubscriptionPlan;
@@ -34,17 +37,31 @@ import static org.junit.jupiter.api.Assertions.*;
 class HierarchicalConfigurationManagerTest {
     private static RedisServer mockServer;
     private static JedisPool pool;
-    private static PlanPolicyLoader planFactory;
 
     private ConfigRepository configStore;
     private StateRepository stateStore;
-    private HierarchicalConfigurationManager manager;
+    private StateRepositoryFactory repoFactory;
+
+    static Stream<String> configFiles() {
+        return Stream.of(
+                "rate-limiter-test-single-plan.yml",
+                "rate-limiter-test-single-plan-atomic.yml",
+                "rate-limiter-test-defaults.yml",
+                "rate-limiter-test-defaults-atomic.yml"
+        );
+    }
+
+    private HierarchicalConfigurationManager buildManager(String configFile) {
+        return new HierarchicalConfigurationManager(
+                configStore, stateStore,
+                PlanPolicyLoader.withConfig(configFile),
+                repoFactory);
+    }
 
     @BeforeAll
     static void startServer() throws IOException {
         mockServer = RedisServer.newRedisServer().start();
         pool = new JedisPool("localhost", mockServer.getBindPort());
-        planFactory = PlanPolicyLoader.getInstance();
     }
 
     @AfterAll
@@ -63,13 +80,15 @@ class HierarchicalConfigurationManagerTest {
         configStore = new RedisConfigRepository(pool, new JacksonSerializer());
         stateStore = new InMemoryStateRepository();
 
-        StateRepositoryFactory repoFactory = StateRepositoryFactory.getInstance();
+        repoFactory = StateRepositoryFactory.getInstance();
         repoFactory.clearRegistry();
-        manager = new HierarchicalConfigurationManager(configStore, stateStore, planFactory, repoFactory);
     }
 
-    @Test
-    void setAndGetHierarchicalState() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void setAndGetHierarchicalState(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         RateLimitKeyGenerator keyGenerator = new RateLimitKeyGenerator();
         RateLimitKey key = keyGenerator.generate(RateLimitScope.USER,
                 RequestContext.builder().plan(SubscriptionPlan.FREE).userId("user1").build());
@@ -82,16 +101,22 @@ class HierarchicalConfigurationManagerTest {
         assertSame(state, retrieved);
     }
 
-    @Test
-    void getHierarchicalStateReturnsNullWhenNotSet() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void getHierarchicalStateReturnsNullWhenNotSet(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         RateLimitKeyGenerator keyGenerator = new RateLimitKeyGenerator();
         RateLimitKey key = keyGenerator.generate(RateLimitScope.USER,
                 RequestContext.builder().plan(SubscriptionPlan.FREE).userId("no-state").build());
         assertNull(manager.getHierarchicalState(key));
     }
 
-    @Test
-    void registerAndResolvePolicy() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void registerAndResolvePolicy(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         TokenBucketConfig globalCfg = new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS);
         TokenBucketConfig userCfg   = new TokenBucketConfig(10,  1,  1, TimeUnit.SECONDS);
 
@@ -107,8 +132,11 @@ class HierarchicalConfigurationManagerTest {
         assertEquals(2, retrieved.getLevels().size());
     }
 
-    @Test
-    void policyIsPersistedInConfigStore() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void policyIsPersistedInConfigStore(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         TokenBucketConfig cfg = new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS);
 
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
@@ -116,19 +144,18 @@ class HierarchicalConfigurationManagerTest {
         manager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
 
         // A second manager sharing the same config store must see the same policy.
-        PlanPolicyLoader planFactory = PlanPolicyLoader.getInstance();
-        StateRepositoryFactory repoFactory = StateRepositoryFactory.getInstance();
-
-        HierarchicalConfigurationManager manager2 =
-                new HierarchicalConfigurationManager(configStore, stateStore, planFactory, repoFactory);
+        HierarchicalConfigurationManager manager2 = buildManager(configFile);
         RequestContext ctx = RequestContext.builder().plan(SubscriptionPlan.FREE).build();
         HierarchicalRateLimitPolicy retrieved = manager2.resolvePolicy(ctx);
         assertNotNull(retrieved);
         assertEquals(1, retrieved.getLevels().size());
     }
 
-    @Test
-    void differentPlansResolveToDifferentPolicies() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void differentPlansResolveToDifferentPolicies(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         TokenBucketConfig freeCfg = new TokenBucketConfig(10,  1, 1, TimeUnit.SECONDS);
         TokenBucketConfig premiumCfg = new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS);
 
@@ -155,8 +182,11 @@ class HierarchicalConfigurationManagerTest {
         assertEquals(premiumCfg.getRefillTokens(), resolvedPremium.getRefillTokens(), 0.0001);
     }
 
-    @Test
-    void resolveConfigReturnsPlanLevelDefault() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void resolveConfigReturnsPlanLevelDefault(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         TokenBucketConfig cfg = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
 
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
@@ -168,8 +198,11 @@ class HierarchicalConfigurationManagerTest {
         assertSame(cfg, manager.resolveConfig(ctx, level));
     }
 
-    @Test
-    void resolveConfigPrefersEntityOverride() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void resolveConfigPrefersEntityOverride(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         TokenBucketConfig defaultCfg  = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         TokenBucketConfig overrideCfg = new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS);
 
@@ -188,8 +221,11 @@ class HierarchicalConfigurationManagerTest {
         assertEquals(overrideCfg.getRefillTokens(), resolved.getRefillTokens(), 0.0001);
     }
 
-    @Test
-    void resolveConfigFallsBackToPlanDefaultWhenNoEntityOverride() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void resolveConfigFallsBackToPlanDefaultWhenNoEntityOverride(String configFile) {
+        HierarchicalConfigurationManager manager = buildManager(configFile);
+
         TokenBucketConfig defaultCfg  = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         TokenBucketConfig overrideCfg = new TokenBucketConfig(50, 5, 1, TimeUnit.SECONDS);
 

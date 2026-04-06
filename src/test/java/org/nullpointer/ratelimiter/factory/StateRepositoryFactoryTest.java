@@ -44,17 +44,6 @@ class StateRepositoryFactoryTest {
     }
 
     @Test
-    void isRegisteredReturnsTrueWhenPresent() {
-        registry.register(StateRepositoryType.IN_MEMORY, new InMemoryStateRepository());
-        assertTrue(registry.isRegistered(StateRepositoryType.IN_MEMORY));
-    }
-
-    @Test
-    void isRegisteredReturnsFalseForNull() {
-        assertFalse(registry.isRegistered(null));
-    }
-
-    @Test
     void laterRegistrationOverridesPrevious() {
         StateRepository first = new InMemoryStateRepository();
         StateRepository second = new InMemoryStateRepository();

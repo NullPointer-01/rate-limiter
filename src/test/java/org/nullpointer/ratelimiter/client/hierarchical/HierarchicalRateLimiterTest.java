@@ -1,9 +1,12 @@
 package org.nullpointer.ratelimiter.client.hierarchical;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.nullpointer.ratelimiter.core.hierarchical.HierarchicalConfigurationManager;
 import org.nullpointer.ratelimiter.utils.PlanPolicyLoader;
+
+import java.util.stream.Stream;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.SubscriptionPlan;
@@ -24,27 +27,40 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HierarchicalRateLimiterTest {
-
-    private ConfigRepository configStore;
-    private StateRepository stateStore;
     private HierarchicalConfigurationManager configManager;
     private HierarchicalRateLimiter rateLimiter;
 
+    static Stream<String> configFiles() {
+        return Stream.of(
+                "rate-limiter-test-single-plan.yml",
+                "rate-limiter-test-single-plan-atomic.yml",
+                "rate-limiter-test-defaults.yml",
+                "rate-limiter-test-defaults-atomic.yml"
+        );
+    }
+
     @BeforeEach
     void setUp() {
-        configStore = new InMemoryConfigRepository();
-        stateStore = new InMemoryStateRepository();
-
         StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
         registry.clearRegistry();
+    }
+
+    private void buildSetup(String configFile) {
+        ConfigRepository configStore = new InMemoryConfigRepository();
+        StateRepository stateStore = new InMemoryStateRepository();
+
+        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
         registry.register(StateRepositoryType.IN_MEMORY, stateStore);
 
-        configManager = new HierarchicalConfigurationManager(configStore, stateStore, PlanPolicyLoader.getInstance(), registry);
+        configManager = new HierarchicalConfigurationManager(configStore, stateStore,
+                PlanPolicyLoader.withConfig(configFile), registry);
         rateLimiter = new HierarchicalRateLimiter(configManager);
     }
 
-    @Test
-    void processWithCostDelegatesToEngine() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void processWithCostDelegatesToEngine(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER,
             new TokenBucketConfig(5, 1, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -59,8 +75,10 @@ class HierarchicalRateLimiterTest {
         assertFalse(r2.isAllowed());
     }
 
-    @Test
-    void processMultiLevelHierarchyRateLimit() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void processMultiLevelHierarchyRateLimit(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.GLOBAL,
             new TokenBucketConfig(100, 10, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
@@ -85,8 +103,10 @@ class HierarchicalRateLimiterTest {
         assertFalse(rateLimiter.process(context).isAllowed());
     }
 
-    @Test
-    void deniedResultContainsRetryInfo() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void deniedResultContainsRetryInfo(String configFile) {
+        buildSetup(configFile);
         HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
         policy.addLevel(new RateLimitLevel(RateLimitScope.USER,
             new TokenBucketConfig(1, 1, 1, TimeUnit.SECONDS), StateRepositoryType.IN_MEMORY));
