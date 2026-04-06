@@ -5,9 +5,7 @@ import java.io.InputStream;
 import java.util.Properties;
 
 public class ConfigurationUtil {
-
     private static final String DEFAULT_CONFIG_PATH = "conf.props";
-
     private static volatile ConfigurationUtil INSTANCE;
 
     private final Properties properties;

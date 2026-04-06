@@ -12,6 +12,7 @@ import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.storage.config.ConfigRepository;
+import org.nullpointer.ratelimiter.storage.state.AtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.StateRepository;
 
 import java.util.Objects;
@@ -65,6 +66,10 @@ public class HierarchicalConfigurationManager extends ConfigurationManager {
 
     public StateRepository resolveStateRepository(RateLimitLevel level) {
         return stateRepositoryFactory.resolve(level.getStateRepositoryType());
+    }
+
+    public AtomicStateRepository resolveAtomicStateRepository(RateLimitLevel level) {
+        return stateRepositoryFactory.resolveAtomic(level.getStateRepositoryType());
     }
 
     public RateLimitState getHierarchicalState(RateLimitKey key, StateRepository repo) {

@@ -17,25 +17,10 @@ import java.util.EnumMap;
 import java.util.Map;
 
 public class PlanPolicyLoader {
-    private static final String DEFAULT_CONFIG_PATH = "rate-limiter-defaults.yml";
-
-    private static volatile PlanPolicyLoader instance;
-
     private final Map<SubscriptionPlan, HierarchicalRateLimitPolicy> planPolicies;
 
     private PlanPolicyLoader(String configPath) {
         this.planPolicies = loadFrom(configPath);
-    }
-
-    public static PlanPolicyLoader getInstance() {
-        if (instance == null) {
-            synchronized (PlanPolicyLoader.class) {
-                if (instance == null) {
-                    instance = new PlanPolicyLoader(DEFAULT_CONFIG_PATH);
-                }
-            }
-        }
-        return instance;
     }
 
     public static PlanPolicyLoader withConfig(String configPath) {
@@ -86,5 +71,4 @@ public class PlanPolicyLoader {
             return null;
         }
     }
-
 }

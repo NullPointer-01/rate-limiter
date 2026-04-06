@@ -1,0 +1,5 @@
+# Supported values: default, atomic
+rate.limiter.config=atomic
+
+config.default.file.path=rate-limiter-defaults.yml
+config.atomic.file.path=rate-limiter-defaults-atomic.yml

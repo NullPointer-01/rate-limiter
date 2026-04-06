@@ -2,6 +2,8 @@ package org.nullpointer.ratelimiter.factory;
 
 import org.nullpointer.ratelimiter.model.state.StateRepositoryType;
 import org.nullpointer.ratelimiter.storage.state.AsyncRedisStateRepository;
+import org.nullpointer.ratelimiter.storage.state.AtomicStateRepository;
+import org.nullpointer.ratelimiter.storage.state.InMemoryAtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
 import org.nullpointer.ratelimiter.storage.state.RedisStateRepository;
 import org.nullpointer.ratelimiter.storage.state.StateRepository;
@@ -13,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class StateRepositoryFactory {
     private static final Map<StateRepositoryType, StateRepository> registry = new ConcurrentHashMap<>();
+    private static final Map<StateRepositoryType, AtomicStateRepository> atomicRegistry = new ConcurrentHashMap<>();
+
     private static StateRepositoryFactory instance;
 
     private StateRepositoryFactory() {}
@@ -30,13 +34,14 @@ public class StateRepositoryFactory {
     }
 
     private static void registerDefaults() {
-        registry.put(StateRepositoryType.IN_MEMORY, new InMemoryStateRepository());
-
         JedisPool pool = RedisConnectionFactory.createPool();
         JacksonSerializer serializer = new JacksonSerializer();
 
+        registry.put(StateRepositoryType.IN_MEMORY, new InMemoryStateRepository());
         registry.put(StateRepositoryType.REDIS, new RedisStateRepository(pool, serializer));
         registry.put(StateRepositoryType.ASYNC_REDIS, new AsyncRedisStateRepository(1000, pool, serializer));
+
+        atomicRegistry.put(StateRepositoryType.IN_MEMORY_ATOMIC, new InMemoryAtomicStateRepository());
     }
 
     public void register(StateRepositoryType type, StateRepository repository) {
@@ -46,8 +51,16 @@ public class StateRepositoryFactory {
         registry.put(type, repository);
     }
 
+    public void registerAtomic(StateRepositoryType type, AtomicStateRepository repository) {
+        if (type == null) throw new IllegalArgumentException("StateRepositoryType cannot be null");
+        if (repository == null) throw new IllegalArgumentException("AtomicStateRepository cannot be null");
+
+        atomicRegistry.put(type, repository);
+    }
+
     public void clearRegistry() {
         registry.clear();
+        atomicRegistry.clear();
     }
 
     public StateRepository resolve(StateRepositoryType type) {
@@ -61,7 +74,14 @@ public class StateRepositoryFactory {
         return repo;
     }
 
-    public boolean isRegistered(StateRepositoryType type) {
-        return type != null && registry.containsKey(type);
+    public AtomicStateRepository resolveAtomic(StateRepositoryType type) {
+        if (type == null) throw new IllegalArgumentException("StateRepositoryType cannot be null");
+
+        AtomicStateRepository repo = atomicRegistry.get(type);
+        if (repo == null) {
+            throw new IllegalStateException("No AtomicStateRepository registered for type: " + type);
+        }
+
+        return repo;
     }
 }

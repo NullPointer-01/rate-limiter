@@ -15,12 +15,15 @@ import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.resilience.CircuitBreaker;
+import org.nullpointer.ratelimiter.model.state.StateRepositoryType;
+import org.nullpointer.ratelimiter.storage.state.AtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.StateRepository;
 import org.nullpointer.ratelimiter.utils.RateLimitKeyGenerator;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class HierarchicalRateLimitEngine {
@@ -60,12 +63,48 @@ public class HierarchicalRateLimitEngine {
             return fallbackResult;
         }
 
+        HierarchicalRateLimitPolicy policy = configurationManager.resolvePolicy(context);
+        if (isAtomicPolicy(policy)) {
+            return getRateLimitResultAtomic(policy, context, cost, time);
+        }
+
+        return getRateLimitResult(policy, context, cost, time);
+    }
+
+    private RateLimitResult getRateLimitResultAtomic(HierarchicalRateLimitPolicy policy, RequestContext context, int cost, RequestTime time) {
         try {
             RateLimitResult lastResult = null;
-            HierarchicalRateLimitPolicy hierarchyPolicy = configurationManager.resolvePolicy(context);
+
+            for (RateLimitLevel level : policy.getLevels()) {
+                RateLimitConfig config = configurationManager.resolveConfig(context, level);
+                RateLimitKey key = keyGenerator.generate(level.getScope(), context);
+
+                AtomicStateRepository atomicRepo = configurationManager.resolveAtomicStateRepository(level);
+                lastResult = atomicRepo.atomicConsumeAndUpdate(key, config, time, cost);
+
+                if (!lastResult.isAllowed()) {
+                    metrics.logRejected();
+                    cb.recordSuccess();
+                    return lastResult;
+                }
+            }
+
+            metrics.logAllowed();
+            cb.recordSuccess();
+            return lastResult; // Should never be null
+        } catch (Exception ex) {
+            metrics.logError();
+            cb.recordError();
+            return cb.getFallbackResult();
+        }
+    }
+
+    private RateLimitResult getRateLimitResult(HierarchicalRateLimitPolicy policy, RequestContext context, int cost, RequestTime time) {
+        try {
+            RateLimitResult lastResult = null;
 
             // Dry-run check for all levels
-            for (RateLimitLevel level : hierarchyPolicy.getLevels()) {
+            for (RateLimitLevel level : policy.getLevels()) {
                 RateLimitScope scope = level.getScope();
                 RateLimitConfig config = configurationManager.resolveConfig(context, level);
                 StateRepository repo = configurationManager.resolveStateRepository(level);
@@ -87,7 +126,7 @@ public class HierarchicalRateLimitEngine {
             }
 
             // Consume quotas for all levels
-            for (RateLimitLevel level : hierarchyPolicy.getLevels()) {
+            for (RateLimitLevel level : policy.getLevels()) {
                 RateLimitScope scope = level.getScope();
                 RateLimitConfig config = configurationManager.resolveConfig(context, level);
                 StateRepository repo = configurationManager.resolveStateRepository(level);
@@ -125,5 +164,10 @@ public class HierarchicalRateLimitEngine {
             cb.recordError();
             return cb.getFallbackResult();
         }
+    }
+
+    private boolean isAtomicPolicy(HierarchicalRateLimitPolicy policy) {
+        Set<StateRepositoryType> ATOMIC_TYPES = Set.of(StateRepositoryType.IN_MEMORY_ATOMIC);
+        return policy.getLevels().stream().allMatch(l -> ATOMIC_TYPES.contains(l.getStateRepositoryType()));
     }
 }
