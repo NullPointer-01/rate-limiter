@@ -6,7 +6,7 @@ plans:
           type: fixed_window_counter
           capacity: 10000
           windowSizeMillis: 60000
-        stateRepositoryType: IN_MEMORY_ATOMIC
+        stateRepositoryType: REDIS_ATOMIC
       - scope: TENANT
         config:
           type: token_bucket
@@ -26,7 +26,7 @@ plans:
           capacity: 20
           refillTokens: 5
           refillIntervalMillis: 1000
-        stateRepositoryType: IN_MEMORY_ATOMIC
+        stateRepositoryType: REDIS_ATOMIC
   premium:
     levels:
       - scope: REGION
@@ -34,7 +34,7 @@ plans:
           type: fixed_window_counter
           capacity: 50000
           windowSizeMillis: 60000
-        stateRepositoryType: IN_MEMORY_ATOMIC
+        stateRepositoryType: REDIS_ATOMIC
       - scope: TENANT
         config:
           type: token_bucket
@@ -55,7 +55,7 @@ plans:
           capacity: 50
           refillTokens: 10
           refillIntervalMillis: 1000
-        stateRepositoryType: IN_MEMORY_ATOMIC
+        stateRepositoryType: REDIS_ATOMIC
   enterprise:
     levels:
       - scope: REGION
@@ -63,7 +63,7 @@ plans:
           type: fixed_window_counter
           capacity: 200000
           windowSizeMillis: 60000
-        stateRepositoryType: IN_MEMORY_ATOMIC
+        stateRepositoryType: REDIS_ATOMIC
       - scope: TENANT
         config:
           type: token_bucket
@@ -83,4 +83,4 @@ plans:
           capacity: 200
           refillTokens: 50
           refillIntervalMillis: 1000
-        stateRepositoryType: IN_MEMORY_ATOMIC
+        stateRepositoryType: REDIS_ATOMIC

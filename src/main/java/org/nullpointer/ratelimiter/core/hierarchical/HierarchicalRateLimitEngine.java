@@ -171,7 +171,7 @@ public class HierarchicalRateLimitEngine {
     }
 
     private boolean isAtomicPolicy(HierarchicalRateLimitPolicy policy) {
-        Set<StateRepositoryType> ATOMIC_TYPES = Set.of(StateRepositoryType.IN_MEMORY_ATOMIC);
+        Set<StateRepositoryType> ATOMIC_TYPES = Set.of(StateRepositoryType.IN_MEMORY_ATOMIC, StateRepositoryType.REDIS_ATOMIC);
         return policy.getLevels().stream().allMatch(l -> ATOMIC_TYPES.contains(l.getStateRepositoryType()));
     }
 }

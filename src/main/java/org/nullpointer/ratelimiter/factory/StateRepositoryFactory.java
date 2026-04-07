@@ -5,6 +5,7 @@ import org.nullpointer.ratelimiter.storage.state.AsyncRedisStateRepository;
 import org.nullpointer.ratelimiter.storage.state.AtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.InMemoryAtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
+import org.nullpointer.ratelimiter.storage.state.RedisLuaStateRepository;
 import org.nullpointer.ratelimiter.storage.state.RedisStateRepository;
 import org.nullpointer.ratelimiter.storage.state.StateRepository;
 import org.nullpointer.ratelimiter.utils.JacksonSerializer;
@@ -25,6 +26,7 @@ public class StateRepositoryFactory {
         registry.put(StateRepositoryType.ASYNC_REDIS, new AsyncRedisStateRepository(1000, pool, serializer));
 
         atomicRegistry.put(StateRepositoryType.IN_MEMORY_ATOMIC, new InMemoryAtomicStateRepository());
+        atomicRegistry.put(StateRepositoryType.REDIS_ATOMIC, new RedisLuaStateRepository(pool));
     }
 
     public void register(StateRepositoryType type, StateRepository repository) {

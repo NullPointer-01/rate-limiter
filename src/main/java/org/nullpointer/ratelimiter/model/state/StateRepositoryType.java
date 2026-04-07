@@ -4,5 +4,6 @@ public enum StateRepositoryType {
     IN_MEMORY,
     REDIS,
     ASYNC_REDIS,
-    IN_MEMORY_ATOMIC
+    IN_MEMORY_ATOMIC,
+    REDIS_ATOMIC
 }
