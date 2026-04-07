@@ -1,6 +1,5 @@
 package org.nullpointer.ratelimiter.client.hierarchical;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.nullpointer.ratelimiter.core.hierarchical.HierarchicalConfigurationManager;
@@ -39,17 +38,11 @@ class HierarchicalRateLimiterTest {
         );
     }
 
-    @BeforeEach
-    void setUp() {
-        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
-        registry.clearRegistry();
-    }
-
     private void buildSetup(String configFile) {
         ConfigRepository configStore = new InMemoryConfigRepository();
         StateRepository stateStore = new InMemoryStateRepository();
 
-        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
+        StateRepositoryFactory registry = new StateRepositoryFactory();
         registry.register(StateRepositoryType.IN_MEMORY, stateStore);
 
         configManager = new HierarchicalConfigurationManager(configStore, stateStore,

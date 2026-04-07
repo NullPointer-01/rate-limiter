@@ -80,8 +80,7 @@ class HierarchicalConfigurationManagerTest {
         configStore = new RedisConfigRepository(pool, new JacksonSerializer());
         stateStore = new InMemoryStateRepository();
 
-        repoFactory = StateRepositoryFactory.getInstance();
-        repoFactory.clearRegistry();
+        repoFactory = new StateRepositoryFactory();
     }
 
     @ParameterizedTest(name = "{0}")

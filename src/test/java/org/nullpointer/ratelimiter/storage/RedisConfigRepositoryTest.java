@@ -49,8 +49,7 @@ class RedisConfigRepositoryTest {
         try (Jedis jedis = pool.getResource()) {
             jedis.flushAll();
         }
-        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
-        registry.clearRegistry();
+        StateRepositoryFactory registry = new StateRepositoryFactory();
 
         JacksonSerializer serializer = new JacksonSerializer();
         repository = new RedisConfigRepository(pool, serializer);

@@ -61,8 +61,7 @@ class RedisHierarchicalRateLimitEngineTest {
 
         JacksonSerializer serializer = new JacksonSerializer();
         RedisStateRepository stateRepo = new RedisStateRepository(pool, serializer);
-        StateRepositoryFactory registry = StateRepositoryFactory.getInstance();
-        registry.clearRegistry();
+        StateRepositoryFactory registry = new StateRepositoryFactory();
 
         registry.register(StateRepositoryType.IN_MEMORY, new InMemoryStateRepository());
         registry.register(StateRepositoryType.REDIS, new RedisStateRepository(pool, serializer));

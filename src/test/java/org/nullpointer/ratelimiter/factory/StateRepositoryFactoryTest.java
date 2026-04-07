@@ -14,7 +14,7 @@ class StateRepositoryFactoryTest {
 
     @BeforeEach
     void setUp() {
-        registry = StateRepositoryFactory.getInstance();
+        registry = new StateRepositoryFactory();
     }
 
     @Test

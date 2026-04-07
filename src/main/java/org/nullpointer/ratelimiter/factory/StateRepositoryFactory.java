@@ -14,27 +14,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class StateRepositoryFactory {
-    private static final Map<StateRepositoryType, StateRepository> registry = new ConcurrentHashMap<>();
-    private static final Map<StateRepositoryType, AtomicStateRepository> atomicRegistry = new ConcurrentHashMap<>();
+    private final Map<StateRepositoryType, StateRepository> registry = new ConcurrentHashMap<>();
+    private final Map<StateRepositoryType, AtomicStateRepository> atomicRegistry = new ConcurrentHashMap<>();
 
-    private static StateRepositoryFactory instance;
-
-    private StateRepositoryFactory() {}
-
-    public static StateRepositoryFactory getInstance() {
-        if (instance == null) {
-            synchronized (StateRepositoryFactory.class) {
-                if (instance == null) {
-                    instance = new StateRepositoryFactory();
-                    registerDefaults();
-                }
-            }
-        }
-        return instance;
-    }
-
-    private static void registerDefaults() {
-        JedisPool pool = RedisConnectionFactory.createPool();
+    public void registerDefaults(JedisPool pool) {
         JacksonSerializer serializer = new JacksonSerializer();
 
         registry.put(StateRepositoryType.IN_MEMORY, new InMemoryStateRepository());
@@ -56,11 +39,6 @@ public class StateRepositoryFactory {
         if (repository == null) throw new IllegalArgumentException("AtomicStateRepository cannot be null");
 
         atomicRegistry.put(type, repository);
-    }
-
-    public void clearRegistry() {
-        registry.clear();
-        atomicRegistry.clear();
     }
 
     public StateRepository resolve(StateRepositoryType type) {

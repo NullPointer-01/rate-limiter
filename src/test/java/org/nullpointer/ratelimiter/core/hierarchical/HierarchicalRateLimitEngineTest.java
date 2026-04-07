@@ -70,8 +70,7 @@ class HierarchicalRateLimitEngineTest {
             jedis.flushAll();
         }
 
-        registry = StateRepositoryFactory.getInstance();
-        registry.clearRegistry();
+        registry = new StateRepositoryFactory();
 
         JacksonSerializer serializer = new JacksonSerializer();
         asyncRedisRepo = new AsyncRedisStateRepository(50, pool, serializer);
@@ -211,7 +210,7 @@ class HierarchicalRateLimitEngineTest {
         RateLimitKeyGenerator keyGenerator = new RateLimitKeyGenerator();
         RateLimitKey stateKey = keyGenerator.generate(RateLimitScope.USER, ctx("user1"));
 
-        StateRepository inMemoryRepo = StateRepositoryFactory.getInstance().resolve(StateRepositoryType.IN_MEMORY);
+        StateRepository inMemoryRepo = registry.resolve(StateRepositoryType.IN_MEMORY);
         assertNull(inMemoryRepo.getHierarchicalState(stateKey));
 
         engine.process(ctx("user1"), 1);
@@ -625,7 +624,7 @@ class HierarchicalRateLimitEngineTest {
     void resolveStateRepositoryUsesLevelDirectRepoWhenSet(String configFile) {
         buildSetup(configFile);
         StateRepository directRepo = new InMemoryStateRepository();
-        StateRepositoryFactory.getInstance().register(StateRepositoryType.IN_MEMORY, directRepo);
+        registry.register(StateRepositoryType.IN_MEMORY, directRepo);
 
         TokenBucketConfig cfg = new TokenBucketConfig(10, 1, 1, TimeUnit.SECONDS);
         RateLimitLevel level = new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.IN_MEMORY);
