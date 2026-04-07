@@ -13,6 +13,8 @@ import java.util.Objects;
 
 public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
+    private record Snapshot(boolean allowed, long currentWindowId, RateLimitResult result) {}
+
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
         return tryConsume(key, config, state, time, 1);
@@ -20,15 +22,20 @@ public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
-        return evaluate(key, config, state, time, cost, false);
+        Snapshot snapshot = computeLimit(key, config, state, time, cost);
+        if (snapshot.allowed()) {
+            FixedWindowCounterState windowState = (FixedWindowCounterState) state;
+            windowState.addCostToWindow(cost, snapshot.currentWindowId());
+        }
+        return snapshot.result();
     }
 
     @Override
     public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
-        return evaluate(key, config, state, time, cost,true);
+        return computeLimit(key, config, state, time, cost).result();
     }
 
-    private RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost, boolean isReadOnly) {
+    private Snapshot computeLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 
@@ -53,16 +60,12 @@ public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
         if (currentWindowUsed + cost <= capacity) {
             long remainingCost = capacity - (currentWindowUsed + cost);
 
-            if (!isReadOnly) {
-                windowState.addCostToWindow(cost, currentWindowId);
-            }
-
             builder.allowed(true)
                     .limit(capacity)
                     .remaining(remainingCost)
                     .resetAtMillis(resetTimeMillis)
                     .retryAfterMillis(0);
-            return builder.build();
+            return new Snapshot(true, currentWindowId, builder.build());
         }
 
         builder.allowed(false)
@@ -70,6 +73,6 @@ public class FixedWindowCounterAlgorithm implements RateLimitingAlgorithm {
                 .remaining(Math.max(0L, capacity - currentWindowUsed))
                 .retryAfterMillis(retryAfterMillis)
                 .resetAtMillis(resetTimeMillis);
-        return builder.build();
+        return new Snapshot(false, currentWindowId, builder.build());
     }
 }

@@ -13,6 +13,8 @@ import java.util.Objects;
 
 public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
 
+    private record Snapshot(boolean allowed, RateLimitResult result) {}
+
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time) {
         return tryConsume(key, config, state, time, 1);
@@ -20,15 +22,20 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
 
     @Override
     public RateLimitResult tryConsume(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
-        return evaluate(key, config, state, time, cost, false);
+        Snapshot snapshot = computeLimit(key, config, state, time, cost);
+        if (snapshot.allowed()) {
+            SlidingWindowState windowState = (SlidingWindowState) state;
+            windowState.appendRequest(cost, time.nanoTime());
+        }
+        return snapshot.result();
     }
 
     @Override
     public RateLimitResult checkLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
-        return evaluate(key, config, state, time, cost, true);
+        return computeLimit(key, config, state, time, cost).result();
     }
 
-    private RateLimitResult evaluate(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost, boolean isReadOnly) {
+    private Snapshot computeLimit(RateLimitKey key, RateLimitConfig config, RateLimitState state, RequestTime time, long cost) {
         Objects.requireNonNull(key, "RateLimitKey cannot be null");
         Objects.requireNonNull(config, "RateLimitConfig cannot be null");
 
@@ -59,15 +66,12 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
         if (needed <= 0) {
             long remainingCost = maxCost - (currentWindowCost + cost);
 
-            if (!isReadOnly) {
-                windowState.appendRequest(cost, nowNanos);
-            }
             builder.allowed(true)
                     .limit(maxCost)
                     .remaining(remainingCost)
                     .resetAtMillis(resetTimeMillis)
                     .retryAfterMillis(0);
-            return builder.build();
+            return new Snapshot(true, builder.build());
         }
 
         builder.allowed(false)
@@ -75,7 +79,7 @@ public class SlidingWindowAlgorithm implements RateLimitingAlgorithm {
                 .remaining(Math.max(0L, maxCost - currentWindowCost))
                 .retryAfterMillis(Math.max(0L, resetTimeMillis - nowMillis))
                 .resetAtMillis(resetTimeMillis);
-        return builder.build();
+        return new Snapshot(false, builder.build());
     }
 
     /**
