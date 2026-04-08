@@ -24,14 +24,16 @@ class PlanPolicyLoaderTest {
                 "rate-limiter-test-single-plan.yml",
                 "rate-limiter-test-single-plan-atomic.yml",
                 "rate-limiter-test-defaults.yml",
-                "rate-limiter-test-defaults-atomic.yml"
+                "rate-limiter-test-defaults-atomic.yml",
+                "rate-limiter-redis-lua.yml"
         );
     }
 
     static Stream<String> multiPlanConfigFiles() {
         return Stream.of(
                 "rate-limiter-test-defaults.yml",
-                "rate-limiter-test-defaults-atomic.yml"
+                "rate-limiter-test-defaults-atomic.yml",
+                "rate-limiter-redis-lua.yml"
         );
     }
 

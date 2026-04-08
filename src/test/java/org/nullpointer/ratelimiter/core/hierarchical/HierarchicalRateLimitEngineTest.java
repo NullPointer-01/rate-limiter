@@ -1,13 +1,22 @@
 package org.nullpointer.ratelimiter.core.hierarchical;
 
-import com.github.fppt.jedismock.RedisServer;
+import org.junit.jupiter.api.Test;
+import org.nullpointer.ratelimiter.model.*;
+import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerConfig;
+import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerMode;
+import org.nullpointer.ratelimiter.storage.state.RedisLuaStateRepository;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.storage.state.AsyncRedisStateRepository;
 import org.nullpointer.ratelimiter.storage.state.InMemoryAtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.InMemoryStateRepository;
@@ -16,9 +25,7 @@ import org.nullpointer.ratelimiter.utils.JacksonSerializer;
 import org.nullpointer.ratelimiter.utils.PlanPolicyLoader;
 
 import java.util.stream.Stream;
-import org.nullpointer.ratelimiter.model.RateLimitKey;
-import org.nullpointer.ratelimiter.model.RequestContext;
-import org.nullpointer.ratelimiter.model.SubscriptionPlan;
+
 import org.nullpointer.ratelimiter.model.config.FixedWindowCounterConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.SlidingWindowConfig;
@@ -42,7 +49,6 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 class HierarchicalRateLimitEngineTest {
-    private static RedisServer mockServer;
     private static JedisPool pool;
 
     private StateRepositoryFactory registry;
@@ -53,14 +59,12 @@ class HierarchicalRateLimitEngineTest {
 
     @BeforeAll
     static void startServer() throws IOException {
-        mockServer = RedisServer.newRedisServer().start();
-        pool = new JedisPool("localhost", mockServer.getBindPort());
+        pool = new JedisPool("localhost", 6379);
     }
 
     @AfterAll
-    static void stopServer() throws IOException {
+    static void stopServer() {
         pool.close();
-        mockServer.stop();
     }
 
     @BeforeEach
@@ -80,6 +84,7 @@ class HierarchicalRateLimitEngineTest {
         registry.register(StateRepositoryType.REDIS, new RedisStateRepository(pool, serializer));
         registry.register(StateRepositoryType.ASYNC_REDIS, asyncRedisRepo);
         registry.registerAtomic(StateRepositoryType.IN_MEMORY_ATOMIC, new InMemoryAtomicStateRepository());
+        registry.registerAtomic(StateRepositoryType.REDIS_ATOMIC, new RedisLuaStateRepository(pool));
     }
 
     static Stream<String> configFiles() {
@@ -87,14 +92,16 @@ class HierarchicalRateLimitEngineTest {
             "rate-limiter-test-single-plan.yml",
                 "rate-limiter-test-single-plan-atomic.yml",
                 "rate-limiter-test-defaults.yml",
-                "rate-limiter-test-defaults-atomic.yml"
+                "rate-limiter-test-defaults-atomic.yml",
+                "rate-limiter-redis-lua.yml"
         );
     }
 
     static Stream<String> multiPlanConfigFiles() {
         return Stream.of(
             "rate-limiter-test-defaults.yml",
-            "rate-limiter-test-defaults-atomic.yml"
+            "rate-limiter-test-defaults-atomic.yml",
+            "rate-limiter-redis-lua.yml"
         );
     }
 
@@ -631,6 +638,153 @@ class HierarchicalRateLimitEngineTest {
 
         StateRepository resolved = configManager.resolveStateRepository(level);
         assertSame(directRepo, resolved);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void highConcurrencyBurstThunderingHerdLatencyCheck(String configFile) throws Exception {
+        buildSetup(configFile);
+        int capacity = 50;
+
+        TokenBucketConfig cfg = new TokenBucketConfig(capacity, 0, 1, TimeUnit.HOURS);
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER, cfg, StateRepositoryType.IN_MEMORY_ATOMIC));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
+
+        RequestContext testCtx = ctx("burst-user");
+        int threads = 200;
+
+        AtomicInteger allowed = new AtomicInteger();
+        CyclicBarrier barrier = new CyclicBarrier(threads);
+        List<Long> latencies = new CopyOnWriteArrayList<>();
+
+        ExecutorService exec = Executors.newFixedThreadPool(threads);
+        List<Callable<Void>> tasks = new ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            tasks.add(() -> {
+                barrier.await(); // Wait for all threads to be ready
+                long start = System.nanoTime();
+                boolean isAllowed = engine.process(testCtx, 1).isAllowed();
+                long end = System.nanoTime();
+
+                latencies.add((end - start) / 1_000_000); // ms
+                if (isAllowed) allowed.incrementAndGet();
+                return null;
+            });
+        }
+
+        List<Future<Void>> futures = exec.invokeAll(tasks);
+        exec.shutdown();
+        exec.awaitTermination(30, TimeUnit.SECONDS);
+        for (Future<Void> f : futures) f.get();
+
+        assertEquals(capacity, allowed.get(), "Exactly capacity should be allowed");
+
+        latencies.sort(Long::compareTo);
+        long p99Latency = latencies.get((int) (latencies.size() * 0.99));
+
+        assertTrue(p99Latency < 50, "P99 latency should be reasonable (got " + p99Latency + "ms)");
+    }
+
+    @Test
+    void datastoreFailureFailOpenAllowsRequests() {
+        JedisPool breakablePool = new JedisPool("localhost", 6379);
+
+        StateRepositoryFactory customRegistry = new StateRepositoryFactory();
+        customRegistry.register(StateRepositoryType.REDIS, new RedisStateRepository(breakablePool, new JacksonSerializer()));
+        customRegistry.registerAtomic(StateRepositoryType.REDIS_ATOMIC, new RedisLuaStateRepository(breakablePool));
+
+        HierarchicalConfigurationManager customConfigManager = new HierarchicalConfigurationManager(
+                new InMemoryConfigRepository(),
+                new InMemoryStateRepository(),
+                PlanPolicyLoader.withConfig("rate-limiter-redis-lua.yml"),
+                customRegistry
+        );
+
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new FixedWindowCounterConfig(10, 1, TimeUnit.HOURS), StateRepositoryType.REDIS_ATOMIC));
+        customConfigManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
+
+        CircuitBreakerConfig cbConfig = CircuitBreakerConfig.builder()
+                .mode(CircuitBreakerMode.FAIL_OPEN)
+                .failureRate(0)
+                .minimumCalls(1)
+                .build();
+
+        HierarchicalRateLimitEngine failOpenEngine = new HierarchicalRateLimitEngine(customConfigManager, cbConfig);
+
+        RequestContext testCtx = ctx("failopen-user");
+
+        // Break the pool to simulate failure
+        breakablePool.close();
+
+        RateLimitResult result1 = failOpenEngine.process(testCtx, 1);
+        assertTrue(result1.isAllowed(), "Should fail-open and allow request");
+
+        RateLimitResult result2 = failOpenEngine.process(testCtx, 1);
+        assertTrue(result2.isAllowed(), "Should still allow while breaker is OPEN");
+    }
+
+    @Test
+    void datastoreFailureFailClosedRejectsRequests() {
+        JedisPool breakablePool = new JedisPool("localhost", 6379);
+
+        StateRepositoryFactory customRegistry = new StateRepositoryFactory();
+        customRegistry.register(StateRepositoryType.REDIS, new RedisStateRepository(breakablePool, new JacksonSerializer()));
+        customRegistry.registerAtomic(StateRepositoryType.REDIS_ATOMIC, new RedisLuaStateRepository(breakablePool));
+
+        HierarchicalConfigurationManager customConfigManager = new HierarchicalConfigurationManager(
+                new InMemoryConfigRepository(),
+                new InMemoryStateRepository(),
+                PlanPolicyLoader.withConfig("rate-limiter-redis-lua.yml"),
+                customRegistry
+        );
+
+        HierarchicalRateLimitPolicy policy = new HierarchicalRateLimitPolicy();
+        policy.addLevel(new RateLimitLevel(RateLimitScope.USER, new FixedWindowCounterConfig(10, 1, TimeUnit.HOURS), StateRepositoryType.REDIS_ATOMIC));
+        customConfigManager.overridePlanPolicy(SubscriptionPlan.FREE, policy);
+
+        CircuitBreakerConfig cbConfig = CircuitBreakerConfig.builder()
+                .mode(CircuitBreakerMode.FAIL_CLOSED)
+                .failureRate(0)
+                .minimumCalls(1)
+                .build();
+
+        HierarchicalRateLimitEngine failClosedEngine = new HierarchicalRateLimitEngine(customConfigManager, cbConfig);
+
+        RequestContext testCtx = ctx("failclosed-user");
+
+        // Break the pool to simulate failure
+        breakablePool.close();
+
+        RateLimitResult result1 = failClosedEngine.process(testCtx, 1);
+        assertFalse(result1.isAllowed(), "Should fail-closed and reject request");
+
+        RateLimitResult result2 = failClosedEngine.process(testCtx, 1);
+        assertFalse(result2.isAllowed(), "Should still reject while breaker is OPEN");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("configFiles")
+    void dynamicConfigurationHotSwap(String configFile) {
+        buildSetup(configFile);
+
+        HierarchicalRateLimitPolicy defaultPolicy = new HierarchicalRateLimitPolicy();
+        defaultPolicy.addLevel(new RateLimitLevel(RateLimitScope.USER, new FixedWindowCounterConfig(10, 1, TimeUnit.HOURS), StateRepositoryType.IN_MEMORY));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, defaultPolicy);
+
+        RequestContext testCtx = ctx("hotswap-user");
+
+        // Use 3 tokens, 7 remaining
+        assertTrue(engine.process(testCtx, 3).isAllowed());
+
+        // Now dynamically hot-swap a stricter policy: capacity 2
+        HierarchicalRateLimitPolicy newPolicy = new HierarchicalRateLimitPolicy();
+        newPolicy.addLevel(new RateLimitLevel(RateLimitScope.USER, new FixedWindowCounterConfig(2, 1, TimeUnit.HOURS), StateRepositoryType.IN_MEMORY));
+        configManager.overridePlanPolicy(SubscriptionPlan.FREE, newPolicy);
+
+        // Next request evaluated against new policy: 3 used > 2 capacity, so deny
+        assertFalse(engine.process(testCtx, 1).isAllowed(), "Should be denied by the new stricter policy immediately");
     }
 
     private int minFreeCapacity() {
