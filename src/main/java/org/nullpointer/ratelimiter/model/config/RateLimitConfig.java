@@ -16,4 +16,16 @@ public interface RateLimitConfig {
    RateLimitingAlgorithm getAlgorithm();
 
    RateLimitState initialRateLimitState(long nanoTime);
+
+   /**
+    * Returns the maximum number of requests (or tokens/cost units) allowed per window.
+    */
+   long getCapacity();
+
+   /**
+    * Returns the rate-limit window duration in milliseconds.
+    * For fixed/sliding window algorithms this is the explicit window size.
+    * For token bucket this is the time required to refill the bucket from 0 to capacity
+    */
+   long getWindowSizeMillis();
 }

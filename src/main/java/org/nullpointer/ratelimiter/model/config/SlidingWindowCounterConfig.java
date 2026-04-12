@@ -28,10 +28,12 @@ public class SlidingWindowCounterConfig implements RateLimitConfig {
         this.windowSizeMillis = windowSizeMillis;
     }
 
+    @Override
     public long getCapacity() {
         return capacity;
     }
 
+    @Override
     public long getWindowSizeMillis() {
         return windowSizeMillis;
     }
@@ -47,4 +49,5 @@ public class SlidingWindowCounterConfig implements RateLimitConfig {
     public RateLimitState initialRateLimitState(long nanoTime) {
         return new SlidingWindowCounterState(nanoTime);
     }
+
 }

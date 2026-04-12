@@ -59,7 +59,7 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
             double remainingTokens = availableTokens - tokens;
 
             builder.allowed(true)
-                    .limit((long) Math.floor(bucketConfig.getCapacity()))
+                    .limit((long) Math.floor(bucketConfig.getBucketCapacity()))
                     .remaining((long) Math.floor(remainingTokens))
                     .resetAtMillis(calculateResetTimeFromTokens(bucketConfig, remainingTokens, nowMillis))
                     .retryAfterMillis(0);
@@ -70,7 +70,7 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
         long retryAfterMillis = (long) Math.ceil(tokensNeeded * bucketConfig.getRefillIntervalMillis() / bucketConfig.getRefillTokens());
 
         builder.allowed(false)
-                .limit((long) Math.floor(bucketConfig.getCapacity()))
+                .limit((long) Math.floor(bucketConfig.getBucketCapacity()))
                 .remaining((long) Math.floor(availableTokens))
                 .retryAfterMillis(retryAfterMillis)
                 .resetAtMillis(nowMillis + retryAfterMillis);
@@ -78,7 +78,7 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
     }
 
     private RefillResult computeRefill(TokenBucketConfig config, TokenBucketState state, long nowNanos) {
-        double capacity = config.getCapacity();
+        double capacity = config.getBucketCapacity();
         double refillTokens = config.getRefillTokens();
         double refillIntervalNanos = config.getRefillIntervalMillis() * 1_000_000;
 
@@ -104,7 +104,7 @@ public class TokenBucketAlgorithm implements RateLimitingAlgorithm {
     }
 
     private long calculateResetTimeFromTokens(TokenBucketConfig config, double remainingTokens, long nowMillis) {
-        double tokensToFill = config.getCapacity() - remainingTokens;
+        double tokensToFill = config.getBucketCapacity() - remainingTokens;
         if (tokensToFill <= 0) return nowMillis;
         long retryAfterMillis = (long) Math.ceil(tokensToFill * config.getRefillIntervalMillis() / config.getRefillTokens());
         return nowMillis + retryAfterMillis;

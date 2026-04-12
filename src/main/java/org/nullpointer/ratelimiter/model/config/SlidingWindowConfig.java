@@ -28,6 +28,7 @@ public class SlidingWindowConfig implements RateLimitConfig {
         this.windowSizeMillis = windowSizeMillis;
     }
 
+    @Override
     public long getWindowSizeMillis() {
         return windowSizeMillis;
     }
@@ -46,5 +47,11 @@ public class SlidingWindowConfig implements RateLimitConfig {
     @JsonIgnore
     public RateLimitState initialRateLimitState(long nanoTime) {
         return new SlidingWindowState();
+    }
+
+    @Override
+    @JsonIgnore
+    public long getCapacity() {
+        return maxCost;
     }
 }

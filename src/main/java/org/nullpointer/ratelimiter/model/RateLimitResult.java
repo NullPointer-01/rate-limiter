@@ -19,6 +19,10 @@ public class RateLimitResult {
         return allowed;
     }
 
+    public long getLimit() {
+        return limit;
+    }
+
     public long getRemaining() {
         return remaining;
     }

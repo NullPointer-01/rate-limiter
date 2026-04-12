@@ -32,7 +32,8 @@ public class TokenBucketConfig implements RateLimitConfig {
         this.refillIntervalMillis = refillIntervalMillis;
     }
 
-    public double getCapacity() {
+    @JsonProperty("capacity")
+    public double getBucketCapacity() {
         return capacity;
     }
 
@@ -54,5 +55,17 @@ public class TokenBucketConfig implements RateLimitConfig {
     @JsonIgnore
     public RateLimitState initialRateLimitState(long nanoTime) {
         return new TokenBucketState(capacity, nanoTime);
+    }
+
+    @Override
+    @JsonIgnore
+    public long getCapacity() {
+        return (long) capacity;
+    }
+
+    @Override
+    @JsonIgnore
+    public long getWindowSizeMillis() {
+        return (long) ((capacity / refillTokens) * refillIntervalMillis);
     }
 }
