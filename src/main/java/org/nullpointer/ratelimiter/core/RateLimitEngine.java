@@ -2,6 +2,9 @@ package org.nullpointer.ratelimiter.core;
 
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
 import org.nullpointer.ratelimiter.factory.CircuitBreakerFactory;
+import org.nullpointer.ratelimiter.hotkey.HotKeyConfig;
+import org.nullpointer.ratelimiter.hotkey.HotKeyLocalRateLimitEngine;
+import org.nullpointer.ratelimiter.hotkey.KeyTemperature;
 import org.nullpointer.ratelimiter.instrumentation.RateLimiterMetrics;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
@@ -19,25 +22,33 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class RateLimitEngine {
+
     private static final Logger logger = Logger.getLogger(RateLimitEngine.class.getName());
 
     private final ConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimiterMetrics metrics;
     private final CircuitBreaker cb;
-
     private final Map<String, Object> locks;
 
+    private final HotKeyConfig hotKeyConfig;
+    private HotKeyLocalRateLimitEngine hotKeyEngine;
+
     public RateLimitEngine(ConfigurationManager configurationManager) {
-        this(configurationManager, CircuitBreakerFactory.defaultCircuitBreakerConfig());
+        this(configurationManager, CircuitBreakerFactory.defaultCircuitBreakerConfig(), HotKeyConfig.disabled());
     }
 
-    public RateLimitEngine(ConfigurationManager configurationManager, CircuitBreakerConfig cbConfig) {
+    public RateLimitEngine(ConfigurationManager configurationManager, CircuitBreakerConfig cbConfig, HotKeyConfig hotKeyConfig) {
         this.configurationManager = configurationManager;
         this.timeSource = new SystemTimeSource();
         this.metrics = new RateLimiterMetrics();
         this.cb = new CircuitBreaker(timeSource, cbConfig);
         this.locks = new ConcurrentHashMap<>();
+        this.hotKeyConfig = hotKeyConfig;
+
+        if (hotKeyConfig.isEnabled()) {
+            this.hotKeyEngine = new HotKeyLocalRateLimitEngine( hotKeyConfig, configurationManager, timeSource, locks);
+        }
     }
 
     public RateLimitResult process(RateLimitKey key, int cost) {
@@ -56,6 +67,25 @@ public class RateLimitEngine {
         }
 
         try {
+            // Hot key path
+            if (hotKeyConfig.isEnabled()) {
+                String k = key.toKey();
+                KeyTemperature temperature = hotKeyEngine.recordAndClassify(k, time.currentTimeMillis());
+
+                if (temperature == KeyTemperature.HOT) {
+                    RateLimitConfig config = configurationManager.getConfig(key);
+                    RateLimitResult result = hotKeyEngine.process(key, config, cost, time);
+
+                    if (result.isAllowed()) {
+                        metrics.logAllowed();
+                    } else {
+                        metrics.logRejected();
+                    }
+                    cb.recordSuccess();
+                    return result;
+                }
+            }
+
             RateLimitConfig config = this.configurationManager.getConfig(key);
             RateLimitResult result;
 
@@ -87,5 +117,9 @@ public class RateLimitEngine {
             cb.recordError();
             return cb.getFallbackResult();
         }
+    }
+
+    HotKeyLocalRateLimitEngine getHotKeyEngine() {
+        return hotKeyEngine;
     }
 }
