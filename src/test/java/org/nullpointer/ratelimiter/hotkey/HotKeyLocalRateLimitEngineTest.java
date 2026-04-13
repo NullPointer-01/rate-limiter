@@ -14,12 +14,7 @@ import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -54,14 +49,20 @@ class HotKeyLocalRateLimitEngineTest {
                 new InMemoryStateRepository()
         );
         engine = new HotKeyLocalRateLimitEngine(
-                CONFIG, manager, new SystemTimeSource(), new ConcurrentHashMap<>());
+                CONFIG, manager, new SystemTimeSource(), newStripes());
         detector = new HotKeyLocalRateLimitEngine(
                 DETECTOR_CONFIG,
                 new ConfigurationManager(
                         new InMemoryConfigRepository(),
                         new InMemoryStateRepository()),
                 new SystemTimeSource(),
-                new ConcurrentHashMap<>());
+                newStripes());
+    }
+
+    private static Object[] newStripes() {
+        Object[] stripes = new Object[1024];
+        for (int i = 0; i < stripes.length; i++) stripes[i] = new Object();
+        return stripes;
     }
 
     private static FixedWindowCounterConfig config(long capacity) {

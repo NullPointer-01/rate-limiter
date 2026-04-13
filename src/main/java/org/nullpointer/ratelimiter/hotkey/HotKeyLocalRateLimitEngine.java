@@ -9,7 +9,6 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
 import java.util.Collections;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -33,8 +32,8 @@ public class HotKeyLocalRateLimitEngine {
     private final HotKeyConfig config;
     private final TimeSource timeSource;
 
-    // Shared with RateLimitEngine — same lock objects per key.
-    private final Map<String, Object> engineLocks;
+    // Shared with RateLimitEngine — same stripe array.
+    private final Object[] engineLocks;
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -45,7 +44,7 @@ public class HotKeyLocalRateLimitEngine {
 
     private volatile ScheduledFuture<?> future;
 
-    public HotKeyLocalRateLimitEngine(HotKeyConfig config, ConfigurationManager configurationManager, TimeSource timeSource, Map<String, Object> engineLocks) {
+    public HotKeyLocalRateLimitEngine(HotKeyConfig config, ConfigurationManager configurationManager, TimeSource timeSource, Object[] engineLocks) {
         this.config = config;
         this.configurationManager = configurationManager;
         this.timeSource = timeSource;
@@ -201,6 +200,24 @@ public class HotKeyLocalRateLimitEngine {
                 logger.log(Level.WARNING, "Error syncing hot key: " + key, e);
             }
         }
+        pruneStaleEntries(timeSource.currentTimeMillis());
+    }
+
+    /**
+     * Removes entries that have been COLD for more than 2x the detection window.
+     */
+    private void pruneStaleEntries(long nowMs) {
+        long staleCutoffMs = 2L * config.getDetectionWindowMillis();
+        entries.entrySet().removeIf(e -> {
+            synchronized (e.getValue()) {
+                boolean stale = e.getValue().temperature == KeyTemperature.COLD
+                        && nowMs - e.getValue().windowStartMillis > staleCutoffMs;
+                if (stale) {
+                    buckets.remove(e.getKey());
+                }
+                return stale;
+            }
+        });
     }
 
     /**
@@ -216,8 +233,9 @@ public class HotKeyLocalRateLimitEngine {
         RateLimitKey key = RateLimitKey.fromKey(rawKey);
         RequestTime time = timeSource.capture();
 
-        // Acquire the same lock the RateLimitEngine uses for this key
-        Object lock = engineLocks.computeIfAbsent(rawKey, k -> new Object());
+        // Acquire the same stripe lock the RateLimitEngine uses for this key
+        // Without the lock, a normal request and a sync can interleave
+        Object lock = engineLocks[Math.abs(rawKey.hashCode()) % 1024];
 
         synchronized (lock) {
             try {

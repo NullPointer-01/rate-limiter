@@ -19,8 +19,11 @@ public class AsyncRedisStateRepository implements StateRepository {
     private static final String STATE_PREFIX = "rl:state:";
     private static final String HIERARCHICAL_STATE_PREFIX = "rl:hstate:";
 
+    private static final long DEFAULT_TTL_SECONDS = 7200L;
+
     private final JedisPool jedisPool;
     private final JacksonSerializer serializer;
+    private final long ttlSeconds;
 
     // Local InMemoryState
     private final Map<String, RateLimitState> stateMap;
@@ -30,7 +33,12 @@ public class AsyncRedisStateRepository implements StateRepository {
     private final ScheduledExecutorService executor;
 
     public AsyncRedisStateRepository(long syncIntervalInMillis, JedisPool jedisPool, JacksonSerializer serializer) {
+        this(syncIntervalInMillis, DEFAULT_TTL_SECONDS, jedisPool, serializer);
+    }
+
+    public AsyncRedisStateRepository(long syncIntervalInMillis, long ttlSeconds, JedisPool jedisPool, JacksonSerializer serializer) {
         this.syncIntervalInMillis = syncIntervalInMillis;
+        this.ttlSeconds = ttlSeconds;
         this.jedisPool = jedisPool;
         this.serializer = serializer;
 
@@ -67,11 +75,19 @@ public class AsyncRedisStateRepository implements StateRepository {
             for (String redisKey : keysToFlush) {
                 RateLimitState state = stateMap.get(redisKey);
                 if (state != null) {
-                    pipeline.set(redisKey, serializer.serialize(state));
+                    pipeline.setex(redisKey, ttlSeconds, serializer.serialize(state));
                 }
 
             }
             pipeline.sync();
+
+            // Evict from write-back buffer for keys that were not re-dirtied during the flush
+            Set<String> currentDirty = dirtyKeys.get();
+            for (String key : keysToFlush) {
+                if (!currentDirty.contains(key)) {
+                    stateMap.remove(key);
+                }
+            }
         } catch (Exception ex) {
             logger.warning("Redis flush failed, re-queuing " + keysToFlush.size() + " keys: " + ex.getMessage());
             // Merge back into dirty set for retry at next sync

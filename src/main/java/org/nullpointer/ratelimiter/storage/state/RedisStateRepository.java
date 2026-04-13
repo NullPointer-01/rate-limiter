@@ -11,12 +11,20 @@ public class RedisStateRepository implements StateRepository {
     private static final String STATE_PREFIX = "rl:state:";
     private static final String HIERARCHICAL_STATE_PREFIX = "rl:hstate:";
 
+    private static final long DEFAULT_TTL_SECONDS = 7200L;
+
     private final JedisPool jedisPool;
     private final JacksonSerializer serializer;
+    private final long ttlSeconds;
 
     public RedisStateRepository(JedisPool jedisPool, JacksonSerializer serializer) {
+        this(jedisPool, serializer, DEFAULT_TTL_SECONDS);
+    }
+
+    public RedisStateRepository(JedisPool jedisPool, JacksonSerializer serializer, long ttlSeconds) {
         this.jedisPool = jedisPool;
         this.serializer = serializer;
+        this.ttlSeconds = ttlSeconds;
     }
 
     @Override
@@ -24,7 +32,7 @@ public class RedisStateRepository implements StateRepository {
         String redisKey = STATE_PREFIX + key.toKey();
         String json = serializer.serialize(state);
         try (Jedis jedis = jedisPool.getResource()) {
-            jedis.set(redisKey, json);
+            jedis.setex(redisKey, ttlSeconds, json);
         }
     }
 
@@ -45,7 +53,7 @@ public class RedisStateRepository implements StateRepository {
         String redisKey = HIERARCHICAL_STATE_PREFIX + key.toKey();
         String json = serializer.serialize(state);
         try (Jedis jedis = jedisPool.getResource()) {
-            jedis.set(redisKey, json);
+            jedis.setex(redisKey, ttlSeconds, json);
         }
     }
 

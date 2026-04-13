@@ -16,8 +16,6 @@ import org.nullpointer.ratelimiter.resilience.CircuitBreaker;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,7 +27,9 @@ public class RateLimitEngine {
     private final TimeSource timeSource;
     private final RateLimiterMetrics metrics;
     private final CircuitBreaker cb;
-    private final Map<String, Object> locks;
+
+    private final Object[] locks = new Object[LOCK_STRIPES];
+    private static final int LOCK_STRIPES = 1024;
 
     private final HotKeyConfig hotKeyConfig;
     private HotKeyLocalRateLimitEngine hotKeyEngine;
@@ -43,7 +43,7 @@ public class RateLimitEngine {
         this.timeSource = new SystemTimeSource();
         this.metrics = new RateLimiterMetrics();
         this.cb = new CircuitBreaker(timeSource, cbConfig);
-        this.locks = new ConcurrentHashMap<>();
+        for (int i = 0; i < LOCK_STRIPES; i++) this.locks[i] = new Object();
         this.hotKeyConfig = hotKeyConfig;
 
         if (hotKeyConfig.isEnabled()) {
@@ -90,7 +90,7 @@ public class RateLimitEngine {
             RateLimitResult result;
 
             String k = key.toKey();
-            Object lock = locks.computeIfAbsent(k, k1 -> new Object());
+            Object lock = locks[Math.abs(k.hashCode()) % LOCK_STRIPES];
 
             synchronized (lock) {
                 RateLimitState state = this.configurationManager.getState(key);

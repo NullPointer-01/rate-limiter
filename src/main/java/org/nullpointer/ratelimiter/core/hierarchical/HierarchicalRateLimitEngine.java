@@ -1,7 +1,6 @@
 package org.nullpointer.ratelimiter.core.hierarchical;
 
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
-import org.nullpointer.ratelimiter.exceptions.RateLimitConfigNotFoundException;
 import org.nullpointer.ratelimiter.factory.CircuitBreakerFactory;
 import org.nullpointer.ratelimiter.instrumentation.RateLimiterMetrics;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
@@ -22,9 +21,7 @@ import org.nullpointer.ratelimiter.utils.RateLimitKeyGenerator;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -37,7 +34,8 @@ public class HierarchicalRateLimitEngine {
     private final RateLimiterMetrics metrics;
     private final CircuitBreaker cb;
 
-    private final Map<String, Object> locks;
+    private static final int LOCK_STRIPES = 1024;
+    private final Object[] locks = new Object[LOCK_STRIPES];
 
     public HierarchicalRateLimitEngine(HierarchicalConfigurationManager configurationManager) {
         this(configurationManager, CircuitBreakerFactory.defaultCircuitBreakerConfig());
@@ -49,7 +47,7 @@ public class HierarchicalRateLimitEngine {
         this.keyGenerator = new RateLimitKeyGenerator();
         this.metrics = new RateLimiterMetrics();
         this.cb = new CircuitBreaker(timeSource, cbConfig);
-        this.locks = new ConcurrentHashMap<>();
+        for (int i = 0; i < LOCK_STRIPES; i++) this.locks[i] = new Object();
     }
 
     public RateLimitResult process(RequestContext context, int cost) {
@@ -138,7 +136,7 @@ public class HierarchicalRateLimitEngine {
 
                 RateLimitKey key = keyGenerator.generate(scope, context);
                 String k = key.toKey();
-                Object lock = locks.computeIfAbsent(k, k1 -> new Object());
+                Object lock = locks[Math.abs(k.hashCode()) % LOCK_STRIPES];
 
                 synchronized (lock) {
                     RateLimitState state = repo.getHierarchicalState(key);

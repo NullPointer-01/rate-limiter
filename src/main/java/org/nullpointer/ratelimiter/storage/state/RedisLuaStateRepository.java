@@ -78,7 +78,7 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                 resetAtMs = nowMs + retryAfterMs
             end
 
-            redis.call('SET', key, cjson.encode({tokens = tokens, lastMs = lastMs}))
+            redis.call('SET', key, cjson.encode({tokens = tokens, lastMs = lastMs}), 'EX', tonumber(ARGV[6]))
             return {allowed, remaining, resetAtMs, retryAfterMs}
             """;
 
@@ -121,7 +121,7 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                 allowed = 0
             end
 
-            redis.call('SET', key, cjson.encode({windowId = currentWindowId, count = count}))
+            redis.call('SET', key, cjson.encode({windowId = currentWindowId, count = count}), 'EX', tonumber(ARGV[5]))
             return {allowed, remaining, resetAtMs, retryAfterMs}
             """;
 
@@ -186,7 +186,7 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                 end
             end
 
-            redis.call('SET', key, cjson.encode({originMs = originMs, windows = windows}))
+            redis.call('SET', key, cjson.encode({originMs = originMs, windows = windows}), 'EX', tonumber(ARGV[5]))
             return {allowed, remaining, resetAtMs, retryAfterMs}
             """;
 
@@ -256,15 +256,23 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                 resetAtMs = nowMs + retryAfterMs
             end
 
-            redis.call('SET', key, cjson.encode({requests = requests, totalCost = totalCost}))
+            redis.call('SET', key, cjson.encode({requests = requests, totalCost = totalCost}), 'EX', tonumber(ARGV[5]))
             return {allowed, remaining, resetAtMs, retryAfterMs}
             """;
 
+    private static final long DEFAULT_TTL_SECONDS = 7200L;
+
     private final JedisPool jedisPool;
     private final Map<ScriptType, String> scriptShas;
+    private final long ttlSeconds;
 
     public RedisLuaStateRepository(JedisPool jedisPool) {
+        this(jedisPool, DEFAULT_TTL_SECONDS);
+    }
+
+    public RedisLuaStateRepository(JedisPool jedisPool, long ttlSeconds) {
         this.jedisPool = jedisPool;
+        this.ttlSeconds = ttlSeconds;
         this.scriptShas = loadScripts();
     }
 
@@ -296,7 +304,8 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                     String.valueOf(cost),
                     String.valueOf((long) tb.getCapacity()),
                     String.valueOf(tb.getRefillTokens()),
-                    String.valueOf((long) tb.getRefillIntervalMillis())
+                    String.valueOf((long) tb.getRefillIntervalMillis()),
+                    String.valueOf(ttlSeconds)
             );
         } else if (config instanceof FixedWindowCounterConfig fw) {
             sha = scriptShas.get(ScriptType.FIXED_WINDOW);
@@ -304,7 +313,8 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                     String.valueOf(nowMs),
                     String.valueOf(cost),
                     String.valueOf(fw.getCapacity()),
-                    String.valueOf(fw.getWindowSizeMillis())
+                    String.valueOf(fw.getWindowSizeMillis()),
+                    String.valueOf(ttlSeconds)
             );
         } else if (config instanceof SlidingWindowCounterConfig swc) {
             sha = scriptShas.get(ScriptType.SLIDING_WINDOW_COUNTER);
@@ -312,7 +322,8 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                     String.valueOf(nowMs),
                     String.valueOf(cost),
                     String.valueOf(swc.getCapacity()),
-                    String.valueOf(swc.getWindowSizeMillis())
+                    String.valueOf(swc.getWindowSizeMillis()),
+                    String.valueOf(ttlSeconds)
             );
         } else if (config instanceof SlidingWindowConfig sw) {
             sha = scriptShas.get(ScriptType.SLIDING_WINDOW);
@@ -320,7 +331,8 @@ public class RedisLuaStateRepository implements AtomicStateRepository {
                     String.valueOf(nowMs),
                     String.valueOf(cost),
                     String.valueOf(sw.getMaxCost()),
-                    String.valueOf(sw.getWindowSizeMillis())
+                    String.valueOf(sw.getWindowSizeMillis()),
+                    String.valueOf(ttlSeconds)
             );
         } else {
             throw new IllegalArgumentException(
