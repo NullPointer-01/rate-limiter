@@ -33,7 +33,7 @@ public class InMemoryAtomicStateRepository implements AtomicStateRepository {
             t.setDaemon(true);
             return t;
         });
-        this.evictionExecutor.scheduleAtFixedRate(
+        this.evictionExecutor.scheduleWithFixedDelay(
                 this::evictStaleEntries,
                 evictionIntervalSeconds,
                 evictionIntervalSeconds,

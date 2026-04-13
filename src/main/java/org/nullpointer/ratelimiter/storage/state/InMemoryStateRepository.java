@@ -32,7 +32,7 @@ public class InMemoryStateRepository implements StateRepository {
             t.setDaemon(true);
             return t;
         });
-        this.evictionExecutor.scheduleAtFixedRate(
+        this.evictionExecutor.scheduleWithFixedDelay(
                 this::evictStaleEntries,
                 evictionIntervalSeconds,
                 evictionIntervalSeconds,

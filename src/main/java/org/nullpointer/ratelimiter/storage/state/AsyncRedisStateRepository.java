@@ -54,7 +54,7 @@ public class AsyncRedisStateRepository implements StateRepository {
     }
 
     public void start() {
-        this.executor.scheduleAtFixedRate(
+        this.executor.scheduleWithFixedDelay(
                 this::syncToRedis,
                 syncIntervalInMillis, // Immediate flush on start is not required
                 syncIntervalInMillis,
