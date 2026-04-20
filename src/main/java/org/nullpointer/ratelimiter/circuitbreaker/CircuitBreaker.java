@@ -1,15 +1,13 @@
-package org.nullpointer.ratelimiter.resilience;
-
-import org.nullpointer.ratelimiter.model.RateLimitResult;
-import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerConfig;
-import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerState;
-import org.nullpointer.ratelimiter.utils.TimeSource;
+package org.nullpointer.ratelimiter.circuitbreaker;
 
 import java.util.Arrays;
+import java.util.function.Supplier;
 
-public class CircuitBreaker {
-    private final TimeSource time;
+public class CircuitBreaker<T> {
+    private final Clock clock;
     private final CircuitBreakerConfig config;
+    private final Supplier<T> allowedFallback;
+    private final Supplier<T> deniedFallback;
 
     private long lastOpenedTimeNanos;
     private CircuitBreakerState state;
@@ -26,10 +24,13 @@ public class CircuitBreaker {
     private int trialSuccess;
     private int trialFailures;
 
-    public CircuitBreaker(TimeSource time, CircuitBreakerConfig config) {
+    public CircuitBreaker(Clock clock, CircuitBreakerConfig config,
+                          Supplier<T> allowedFallback, Supplier<T> deniedFallback) {
         this.config = config;
         this.state = CircuitBreakerState.CLOSED;
-        this.time = time;
+        this.clock = clock;
+        this.allowedFallback = allowedFallback;
+        this.deniedFallback = deniedFallback;
 
         this.success = 0;
         this.errors = 0;
@@ -39,6 +40,9 @@ public class CircuitBreaker {
         this.window = new boolean[config.getWindowSize()];
     }
 
+    /**
+     * Determines whether the next call should be permitted.
+     */
     public synchronized boolean allowExecution() {
         // Allow calls in CLOSED state
         if (CircuitBreakerState.CLOSED.equals(state)) {
@@ -47,7 +51,7 @@ public class CircuitBreaker {
 
         if (CircuitBreakerState.OPEN.equals(state)) {
             // Move to HALF_OPEN after wait time
-            if (time.nanoTime() - lastOpenedTimeNanos >= config.getWaitTimeNanos()) {
+            if (clock.nanoTime() - lastOpenedTimeNanos >= config.getWaitTimeNanos()) {
                 transitionToHalfOpen();
             } else {
                 return false;
@@ -64,8 +68,12 @@ public class CircuitBreaker {
         return true;
     }
 
+    /**
+     * Records a successful call. Updates the sliding window or half-open trial metrics.
+     * Triggers a transition from HALF_OPEN to CLOSED if trial success rate meets the threshold.
+     */
     public synchronized void recordSuccess() {
-        if (CircuitBreakerState.OPEN.equals(state)) return; // Method should not be called in OPEN state
+        if (CircuitBreakerState.OPEN.equals(state)) return;
 
         if (CircuitBreakerState.HALF_OPEN.equals(state)) {
             trialSuccess++;
@@ -84,11 +92,15 @@ public class CircuitBreaker {
         idx = (idx + 1) % window.length;
 
         success++;
-        evaluateFailureRate(); // Evaluate on success too
+        evaluateFailureRate();
     }
 
+    /**
+     * Records a failed call. Updates the sliding window or half-open trial metrics.
+     * Triggers a transition from CLOSED to OPEN, or from HALF_OPEN back to OPEN.
+     */
     public synchronized void recordError() {
-        if (CircuitBreakerState.OPEN.equals(state)) return; // Method should not be called in OPEN state
+        if (CircuitBreakerState.OPEN.equals(state)) return;
 
         if (CircuitBreakerState.HALF_OPEN.equals(state)) {
             trialFailures++;
@@ -122,6 +134,14 @@ public class CircuitBreaker {
         return CircuitBreakerState.HALF_OPEN.equals(state);
     }
 
+    public T getFallbackResult() {
+        if (config.isFailOpenMode()) {
+            return allowedFallback.get();
+        }
+
+        return deniedFallback.get();
+    }
+
     private void evaluateFailureRate() {
         long total = success + errors;
         if (total >= config.getMinimumCalls() && failureRate() >= config.getFailureRate()) {
@@ -129,18 +149,9 @@ public class CircuitBreaker {
         }
     }
 
-    public RateLimitResult getFallbackResult() {
-        if (config.isFailOpenMode()) {
-            return RateLimitResult.builder().allowed(true).build();
-        }
-
-        return RateLimitResult.builder().allowed(false).build();
-    }
-
     private void transitionToOpen() {
         state = CircuitBreakerState.OPEN;
-        lastOpenedTimeNanos = time.nanoTime();
-        // resetMetrics(); Reset is optional
+        lastOpenedTimeNanos = clock.nanoTime();
     }
 
     private void transitionToHalfOpen() {

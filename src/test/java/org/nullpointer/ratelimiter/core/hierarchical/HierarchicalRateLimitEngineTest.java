@@ -2,8 +2,8 @@ package org.nullpointer.ratelimiter.core.hierarchical;
 
 import org.junit.jupiter.api.Test;
 import org.nullpointer.ratelimiter.model.*;
-import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerConfig;
-import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerMode;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreakerConfig;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreakerMode;
 import org.nullpointer.ratelimiter.storage.state.RedisLuaStateRepository;
 
 import java.util.ArrayList;

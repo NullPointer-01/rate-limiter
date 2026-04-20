@@ -1,4 +1,4 @@
-package org.nullpointer.ratelimiter.model.circuitbreaker;
+package org.nullpointer.ratelimiter.circuitbreaker;
 
 import java.util.concurrent.TimeUnit;
 
@@ -31,6 +31,10 @@ public class CircuitBreakerConfig {
 
     public boolean isFailClosedMode() {
         return CircuitBreakerMode.FAIL_CLOSED.equals(mode);
+    }
+
+    public CircuitBreakerMode getMode() {
+        return mode;
     }
 
     public int getWindowSize() {

@@ -5,7 +5,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.nullpointer.ratelimiter.factory.CircuitBreakerFactory;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreakerFactory;
 import org.nullpointer.ratelimiter.hotkey.HotKeyConfig;
 import org.nullpointer.ratelimiter.hotkey.KeyTemperature;
 import org.nullpointer.ratelimiter.model.RateLimitKey;

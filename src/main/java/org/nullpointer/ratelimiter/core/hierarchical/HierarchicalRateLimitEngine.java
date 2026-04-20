@@ -1,19 +1,19 @@
 package org.nullpointer.ratelimiter.core.hierarchical;
 
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
-import org.nullpointer.ratelimiter.factory.CircuitBreakerFactory;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreaker;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreakerConfig;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreakerFactory;
 import org.nullpointer.ratelimiter.instrumentation.RateLimiterMetrics;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestContext;
 import org.nullpointer.ratelimiter.model.RequestTime;
-import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.config.hierarchical.HierarchicalRateLimitPolicy;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitLevel;
 import org.nullpointer.ratelimiter.model.config.hierarchical.RateLimitScope;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
-import org.nullpointer.ratelimiter.resilience.CircuitBreaker;
 import org.nullpointer.ratelimiter.model.state.StateRepositoryType;
 import org.nullpointer.ratelimiter.storage.state.AtomicStateRepository;
 import org.nullpointer.ratelimiter.storage.state.StateRepository;
@@ -32,7 +32,7 @@ public class HierarchicalRateLimitEngine {
     private final TimeSource timeSource;
     private final RateLimitKeyGenerator keyGenerator;
     private final RateLimiterMetrics metrics;
-    private final CircuitBreaker cb;
+    private final CircuitBreaker<RateLimitResult> cb;
 
     private static final int LOCK_STRIPES = 1024;
     private final Object[] locks = new Object[LOCK_STRIPES];
@@ -46,7 +46,9 @@ public class HierarchicalRateLimitEngine {
         this.timeSource = new SystemTimeSource();
         this.keyGenerator = new RateLimitKeyGenerator();
         this.metrics = new RateLimiterMetrics();
-        this.cb = new CircuitBreaker(timeSource, cbConfig);
+        this.cb = new CircuitBreaker<>(timeSource::nanoTime, cbConfig,
+                () -> RateLimitResult.builder().allowed(true).build(),
+                () -> RateLimitResult.builder().allowed(false).build());
         for (int i = 0; i < LOCK_STRIPES; i++) this.locks[i] = new Object();
     }
 

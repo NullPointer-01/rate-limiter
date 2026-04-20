@@ -1,7 +1,9 @@
 package org.nullpointer.ratelimiter.core;
 
 import org.nullpointer.ratelimiter.algorithms.RateLimitingAlgorithm;
-import org.nullpointer.ratelimiter.factory.CircuitBreakerFactory;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreaker;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreakerConfig;
+import org.nullpointer.ratelimiter.circuitbreaker.CircuitBreakerFactory;
 import org.nullpointer.ratelimiter.hotkey.HotKeyConfig;
 import org.nullpointer.ratelimiter.hotkey.HotKeyLocalRateLimitEngine;
 import org.nullpointer.ratelimiter.hotkey.KeyTemperature;
@@ -9,10 +11,8 @@ import org.nullpointer.ratelimiter.instrumentation.RateLimiterMetrics;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
 import org.nullpointer.ratelimiter.model.RequestTime;
-import org.nullpointer.ratelimiter.model.circuitbreaker.CircuitBreakerConfig;
 import org.nullpointer.ratelimiter.model.config.RateLimitConfig;
 import org.nullpointer.ratelimiter.model.state.RateLimitState;
-import org.nullpointer.ratelimiter.resilience.CircuitBreaker;
 import org.nullpointer.ratelimiter.utils.SystemTimeSource;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
@@ -26,7 +26,7 @@ public class RateLimitEngine {
     private final ConfigurationManager configurationManager;
     private final TimeSource timeSource;
     private final RateLimiterMetrics metrics;
-    private final CircuitBreaker cb;
+    private final CircuitBreaker<RateLimitResult> cb;
 
     private final Object[] locks = new Object[LOCK_STRIPES];
     private static final int LOCK_STRIPES = 1024;
@@ -42,7 +42,9 @@ public class RateLimitEngine {
         this.configurationManager = configurationManager;
         this.timeSource = new SystemTimeSource();
         this.metrics = new RateLimiterMetrics();
-        this.cb = new CircuitBreaker(timeSource, cbConfig);
+        this.cb = new CircuitBreaker<>(timeSource::nanoTime, cbConfig,
+                () -> RateLimitResult.builder().allowed(true).build(),
+                () -> RateLimitResult.builder().allowed(false).build());
         for (int i = 0; i < LOCK_STRIPES; i++) this.locks[i] = new Object();
         this.hotKeyConfig = hotKeyConfig;
 
