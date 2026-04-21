@@ -1,5 +1,8 @@
 package org.nullpointer.ratelimiter.hotkey;
 
+import org.nullpointer.ratelimiter.cache.Cache;
+import org.nullpointer.ratelimiter.cache.SimpleCache;
+import org.nullpointer.ratelimiter.cache.evictionpolicy.LRUEvictionPolicy;
 import org.nullpointer.ratelimiter.core.ConfigurationManager;
 import org.nullpointer.ratelimiter.model.RateLimitKey;
 import org.nullpointer.ratelimiter.model.RateLimitResult;
@@ -9,24 +12,31 @@ import org.nullpointer.ratelimiter.model.state.RateLimitState;
 import org.nullpointer.ratelimiter.utils.TimeSource;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * An in-memory Rate Limit Engine using Fixed Window Counter algorithm
+ * A lock-free in-memory Rate Limit Engine using Fixed Window Counter algorithm.
  */
 public class HotKeyLocalRateLimitEngine {
 
     private static final Logger logger = Logger.getLogger(HotKeyLocalRateLimitEngine.class.getName());
-    private final ConcurrentHashMap<String, KeyBucket> buckets = new ConcurrentHashMap<>();
+    private static final int DEFAULT_CACHE_CAPACITY = 10_000;
+    private static final int MAX_RETRIES = 32;
 
-    private final ConcurrentHashMap<String, HotKeyState> entries = new ConcurrentHashMap<>();
+    private final Cache<String, AtomicReference<KeyBucket>> buckets;
+    private final Cache<String, AtomicReference<HotKeyState>> entries;
+
+    // Secondary index — keys whose temperature is HOT. Kept in sync lazily.
+    private final Set<String> hotKeysIndex = ConcurrentHashMap.newKeySet();
 
     private final ConfigurationManager configurationManager;
     private final HotKeyConfig config;
@@ -49,28 +59,44 @@ public class HotKeyLocalRateLimitEngine {
         this.configurationManager = configurationManager;
         this.timeSource = timeSource;
         this.engineLocks = engineLocks;
+
+        this.entries = new SimpleCache<>(DEFAULT_CACHE_CAPACITY, new LRUEvictionPolicy<>());
+        this.buckets = new SimpleCache<>(DEFAULT_CACHE_CAPACITY, new LRUEvictionPolicy<>());
+
         start();
     }
 
     public KeyTemperature recordAndClassify(String rawKey, long nowMillis) {
-        HotKeyState entry = entries.computeIfAbsent(rawKey, k -> new HotKeyState(nowMillis));
+        AtomicReference<HotKeyState> ref = entries.computeIfAbsent(rawKey,
+                k -> new AtomicReference<>(HotKeyState.initial(nowMillis)));
 
-        synchronized (entry) {
-            if (nowMillis - entry.windowStartMillis >= config.getDetectionWindowMillis()) {
-                entry.count = 0;
-                entry.windowStartMillis = nowMillis;
-                entry.temperature = KeyTemperature.COLD;
+        // Non-blocking CAS
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            HotKeyState current = ref.get();
+            HotKeyState next = nextHotKeyState(current, nowMillis);
+
+            if (ref.compareAndSet(current, next)) {
+                if (next.temperature == KeyTemperature.HOT) {
+                    hotKeysIndex.add(rawKey);
+                } else if (current.temperature == KeyTemperature.HOT) {
+                    hotKeysIndex.remove(rawKey);
+                }
+                return next.temperature;
             }
+        }
 
-            entry.count++;
+        // Fallback to locking
+        synchronized (ref) {
+            HotKeyState current = ref.get();
+            HotKeyState next = nextHotKeyState(current, nowMillis);
+            ref.set(next);
 
-            if (entry.count >= config.getHotThreshold()) {
-                entry.temperature = KeyTemperature.HOT;
-            } else if (entry.count >= config.getWarmThreshold() && entry.temperature != KeyTemperature.HOT) {
-                entry.temperature = KeyTemperature.WARM;
+            if (next.temperature == KeyTemperature.HOT) {
+                hotKeysIndex.add(rawKey);
+            } else if (current.temperature == KeyTemperature.HOT) {
+                hotKeysIndex.remove(rawKey);
             }
-
-            return entry.temperature;
+            return next.temperature;
         }
     }
 
@@ -78,80 +104,68 @@ public class HotKeyLocalRateLimitEngine {
         String rawKey = key.toKey();
         long nowMillis = time.currentTimeMillis();
         long windowMillis = rateLimitConfig.getWindowSizeMillis();
+
         long globalCapacity = rateLimitConfig.getCapacity();
-        long localLimit = Math.max(1,
-                (long) (globalCapacity * config.getHotLocalQuotaFraction()));
+        long localLimit = Math.max(1, (long) (globalCapacity * config.getHotLocalQuotaFraction()));
 
-        KeyBucket bucket = buckets.computeIfAbsent(rawKey, k -> new KeyBucket(nowMillis));
+        AtomicReference<KeyBucket> ref = buckets.computeIfAbsent(rawKey,
+                k -> new AtomicReference<>(KeyBucket.initial(nowMillis)));
 
-        synchronized (bucket) {
-            if (nowMillis - bucket.windowStartMillis >= windowMillis) {
-                bucket.windowCount = 0;
-                bucket.syncedCount = 0;
-                bucket.windowStartMillis = nowMillis;
-                bucket.frozen = false;
-            }
+        // Non-blocking CAS
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            KeyBucket current = ref.get();
+            ProcessResult pr = computeProcessResult(current, nowMillis, windowMillis, globalCapacity, localLimit, cost);
 
-            long resetAtMillis = bucket.windowStartMillis + windowMillis;
+            if (pr.frozen) return pr.result;
+            if (ref.compareAndSet(current, pr.nextBucket)) return pr.result;
+        }
 
-            if (bucket.frozen) {
-                return RateLimitResult.builder()
-                        .allowed(false)
-                        .limit(globalCapacity)
-                        .remaining(0)
-                        .resetAtMillis(resetAtMillis)
-                        .retryAfterMillis(Math.max(0, resetAtMillis - nowMillis))
-                        .build();
-            }
+        // Fallback to locking
+        synchronized (ref) {
+            KeyBucket current = ref.get();
+            ProcessResult pr = computeProcessResult(current, nowMillis, windowMillis, globalCapacity, localLimit, cost);
 
-            boolean allowed = bucket.windowCount + cost <= localLimit;
-            if (allowed) {
-                bucket.windowCount += cost;
-            }
-
-            return RateLimitResult.builder()
-                    .allowed(allowed)
-                    .limit(globalCapacity)
-                    .remaining(Math.max(0, globalCapacity - bucket.windowCount))
-                    .resetAtMillis(resetAtMillis)
-                    .retryAfterMillis(allowed ? 0 : Math.max(0, resetAtMillis - nowMillis))
-                    .build();
+            if (!pr.frozen) ref.set(pr.nextBucket);
+            return pr.result;
         }
     }
 
     public KeyTemperature getTemperature(String rawKey) {
-        HotKeyState entry = entries.get(rawKey);
-        if (entry == null) return KeyTemperature.COLD;
-
-        synchronized (entry) {
-            return entry.temperature;
-        }
+        AtomicReference<HotKeyState> ref = entries.get(rawKey);
+        if (ref == null) return KeyTemperature.COLD;
+        return ref.get().temperature;
     }
 
     // Returns an unmodifiable snapshot of all hot keys
     public Set<String> getAllHotKeys() {
-        Set<String> hotKeys = ConcurrentHashMap.newKeySet();
-        entries.forEach((key, entry) -> {
-            synchronized (entry) {
-                if (entry.temperature == KeyTemperature.HOT) {
-                    hotKeys.add(key);
-                }
-            }
-        });
-        return Collections.unmodifiableSet(hotKeys);
+        return Collections.unmodifiableSet(new HashSet<>(hotKeysIndex));
     }
 
     /**
      * Returns the number of request cost-units consumed locally since the last sync, then resets the cost.
      */
     public long getAndResetCost(String key) {
-        KeyBucket bucket = buckets.get(key);
-        if (bucket == null) return 0;
+        AtomicReference<KeyBucket> ref = buckets.get(key);
+        if (ref == null) return 0;
 
-        synchronized (bucket) {
-            long delta = bucket.windowCount - bucket.syncedCount;
-            bucket.syncedCount = bucket.windowCount;
-            return Math.max(0, delta);
+        // Non-blocking CAS
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            KeyBucket current = ref.get();
+            long delta = current.windowCount - current.syncedCount;
+            if (delta <= 0) return 0;
+
+            KeyBucket next = new KeyBucket(current.windowCount, current.windowCount, current.windowStartMillis, current.frozen);
+            if (ref.compareAndSet(current, next)) return delta;
+        }
+
+        // Fallback to locking
+        synchronized (ref) {
+            KeyBucket current = ref.get();
+            long delta = current.windowCount - current.syncedCount;
+            if (delta <= 0) return 0;
+
+            ref.set(new KeyBucket(current.windowCount, current.windowCount, current.windowStartMillis, current.frozen));
+            return delta;
         }
     }
 
@@ -159,15 +173,30 @@ public class HotKeyLocalRateLimitEngine {
      * Freezes so that processing returns denied for all subsequent requests until the local window resets.
      */
     public void freeze(String rawKey) {
-        KeyBucket bucket = buckets.get(rawKey);
-        if (bucket != null) {
-            bucket.frozen = true;
+        AtomicReference<KeyBucket> ref = buckets.get(rawKey);
+        if (ref == null) return;
+
+        // Non-blocking CAS
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            KeyBucket current = ref.get();
+            if (current.frozen) return;
+
+            KeyBucket next = new KeyBucket(current.windowCount, current.syncedCount, current.windowStartMillis, true);
+            if (ref.compareAndSet(current, next)) return;
+        }
+
+        // Fallback to locking
+        synchronized (ref) {
+            KeyBucket current = ref.get();
+            if (!current.frozen) {
+                ref.set(new KeyBucket(current.windowCount, current.syncedCount, current.windowStartMillis, true));
+            }
         }
     }
 
     public boolean isFrozen(String rawKey) {
-        KeyBucket bucket = buckets.get(rawKey);
-        return bucket != null && bucket.frozen;
+        AtomicReference<KeyBucket> ref = buckets.get(rawKey);
+        return ref != null && ref.get().frozen;
     }
 
     private void start() {
@@ -187,41 +216,29 @@ public class HotKeyLocalRateLimitEngine {
         }
         scheduler.shutdown();
         scheduler.awaitTermination(5, TimeUnit.SECONDS);
+        entries.close();
+        buckets.close();
         logger.info("HotKeyLocalRateLimitEngine sync stopped");
     }
 
     // Exposed for testing
     public void syncAll() {
-        Set<String> hotKeys = getAllHotKeys();
-        for (String key : hotKeys) {
+        for (String key : getAllHotKeys()) {
             try {
+                // If the entry was evicted from the cache, clean up the index
+                if (entries.get(key) == null) {
+                    hotKeysIndex.remove(key);
+                    continue;
+                }
                 syncKey(key);
             } catch (Exception e) {
                 logger.log(Level.WARNING, "Error syncing hot key: " + key, e);
             }
         }
-        pruneStaleEntries(timeSource.currentTimeMillis());
     }
 
     /**
-     * Removes entries that have been COLD for more than 2x the detection window.
-     */
-    private void pruneStaleEntries(long nowMs) {
-        long staleCutoffMs = 2L * config.getDetectionWindowMillis();
-        entries.entrySet().removeIf(e -> {
-            synchronized (e.getValue()) {
-                boolean stale = e.getValue().temperature == KeyTemperature.COLD
-                        && nowMs - e.getValue().windowStartMillis > staleCutoffMs;
-                if (stale) {
-                    buckets.remove(e.getKey());
-                }
-                return stale;
-            }
-        });
-    }
-
-    /**
-     * Syncs a single key - drains local accumulated cost by replaying the request
+     * Syncs a single key — drains local accumulated cost by replaying the request.
      * Freezes if the global limit is exhausted.
      */
     private void syncKey(String rawKey) {
@@ -260,29 +277,74 @@ public class HotKeyLocalRateLimitEngine {
         }
     }
 
-    private static final class HotKeyState {
-        long count;
-        long windowStartMillis;
-        KeyTemperature temperature;
+    private HotKeyState nextHotKeyState(HotKeyState current, long nowMillis) {
+        long windowStart = current.windowStartMillis;
+        long count = current.count;
+        KeyTemperature temp = current.temperature;
 
-        HotKeyState(long nowMillis) {
-            this.count = 0;
-            this.windowStartMillis = nowMillis;
-            this.temperature = KeyTemperature.COLD;
+        // Reset if window is expired
+        if (nowMillis - windowStart >= config.getDetectionWindowMillis()) {
+            count = 0;
+            windowStart = nowMillis;
+            temp = KeyTemperature.COLD;
+        }
+
+        count++;
+
+        if (count >= config.getHotThreshold()) {
+            temp = KeyTemperature.HOT;
+        } else if (count >= config.getWarmThreshold() && temp != KeyTemperature.HOT) {
+            temp = KeyTemperature.WARM;
+        }
+
+        return new HotKeyState(count, windowStart, temp);
+    }
+
+    private ProcessResult computeProcessResult(KeyBucket current, long nowMillis, long windowMillis, long globalCapacity, long localLimit, int cost) {
+        long wc = current.windowCount, sc = current.syncedCount, ws = current.windowStartMillis;
+        boolean frozen = current.frozen;
+
+        if (nowMillis - ws >= windowMillis) {
+            wc = 0;
+            sc = 0;
+            ws = nowMillis;
+            frozen = false;
+        }
+        long resetAtMillis = ws + windowMillis;
+
+        if (frozen) {
+            RateLimitResult result = RateLimitResult.builder()
+                    .allowed(false).limit(globalCapacity).remaining(0)
+                    .resetAtMillis(resetAtMillis)
+                    .retryAfterMillis(Math.max(0, resetAtMillis - nowMillis)).build();
+            return new ProcessResult(result, null, true);
+        }
+
+        boolean allowed = wc + cost <= localLimit;
+        long newWc = allowed ? wc + cost : wc;
+        KeyBucket nextBucket = new KeyBucket(newWc, sc, ws, false);
+
+        RateLimitResult result = RateLimitResult.builder()
+                .allowed(allowed).limit(globalCapacity)
+                .remaining(Math.max(0, globalCapacity - newWc))
+                .resetAtMillis(resetAtMillis)
+                .retryAfterMillis(allowed ? 0 : Math.max(0, resetAtMillis - nowMillis)).build();
+        return new ProcessResult(result, nextBucket, false);
+    }
+
+    // Immutable temperature-tracking state
+    private record HotKeyState(long count, long windowStartMillis, KeyTemperature temperature) {
+        static HotKeyState initial(long nowMillis) {
+            return new HotKeyState(0, nowMillis, KeyTemperature.COLD);
         }
     }
 
-    /**
-     * Per-key bucket having State Sync information
-     */
-    private static final class KeyBucket {
-        long windowCount = 0;
-        long syncedCount = 0;
-        long windowStartMillis;
-        boolean frozen = false;
-
-        KeyBucket(long nowMillis) {
-            this.windowStartMillis = nowMillis;
+    // Immutable per-key bucket for state sync
+    private record KeyBucket(long windowCount, long syncedCount, long windowStartMillis, boolean frozen) {
+        static KeyBucket initial(long nowMillis) {
+            return new KeyBucket(0, 0, nowMillis, false);
         }
     }
+
+    private record ProcessResult(RateLimitResult result, KeyBucket nextBucket, boolean frozen) { }
 }
